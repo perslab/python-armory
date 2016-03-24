@@ -16,3 +16,12 @@ def get_average_by_celltype(df_dge,df_cluster):
 # Function to standardize genes' expresion across cell types
 def standardize(df):
         return df.sub(df.mean(axis=1),axis=0).div(df.std(axis=1),axis=0)
+
+# Function to normalize to 10k UMI, take log and discard rows with no transcripts
+def normalize(df):
+	dge = df.as_matrix()
+	col_sums = np.apply_along_axis(sum,0,dge)
+	mat_dge_norm =  np.log( dge/[float(x) for x in col_sums] * 10000 + 1 ) 
+	df_dge_norm = pd.DataFrame(mat_dge_norm,index=df.index,columns=df.columns)
+	df_dge_norm.drop(df_dge_norm.index[df_dge_norm.sum(axis=1) == 0],axis=0,inplace=True)
+	return df_dge_norm
