@@ -18,7 +18,6 @@
 ####################################################################################################
 
 library(xlsx)
-library(plyr) # load plyr before dplyr to avoid problems.
 library(dplyr)
 
 library(gProfileR)
@@ -44,7 +43,8 @@ add_cell_type_annotation <- function(df.in, df.cluster_annotation, colname_clust
   # colname_cluster_id      string that specifies the column name of the cluster id column in df.in
   ### OUTPUT
   # a data frame with the column "annotation" added
-  df.in$annotation <- as.character(plyr::mapvalues(x=df.in[,colname_cluster_id], from=cluster_id, to=annotation)) # add cell type information | as.character() avoids factor creation...
+   df.in$annotation <- as.character(plyr::mapvalues(x=df.in[,colname_cluster_id], from=cluster_id, to=annotation)) # add cell type information | as.character() avoids factor creation...
+   # ^ notice that we do not need to load the whole plyr package - we can just refer directly to it.
   return(df.in)
 }
 
@@ -106,15 +106,15 @@ toExcel.per_cluster_sample_composition <- function(seurat_obj, colname_cluster_i
   # REF: https://stackoverflow.com/a/24576703
   df.per_cluster_sample_composition <- seurat_obj@meta.data %>% 
     group_by(UQ(rlang::sym(colname_cluster_ident)), UQ(rlang::sym(colname_group))) %>%
-    dplyr::summarize(n=n()) %>%
+    summarize(n=n()) %>%
     mutate(pct=round(n/sum(n)*100,1)) %>%
-    dplyr::rename(cluster=UQ(rlang::sym(colname_cluster_ident)))
+    rename(cluster=UQ(rlang::sym(colname_cluster_ident)))
   
   ### Making the format of the table nicer.
   # REF: https://stackoverflow.com/questions/30592094/r-spreading-multiple-columns-with-tidyr
   df.per_cluster_sample_composition.fmt <- df.per_cluster_sample_composition %>% 
     gather(tmp_key, tmp_value, n,pct) %>%
-    unite(tmp_unite,sample,tmp_key, sep=".") %>%
+    unite(tmp_unite,UQ(rlang::sym(colname_group)),tmp_key, sep=".") %>%
     spread(tmp_unite, tmp_value, fill=0) %>% # fills 'missing combinations' with zero 
     select(-ends_with("n"), ends_with("n")) %>% # puts count ".n" clusters to the end
     arrange(as.numeric(cluster))
@@ -164,7 +164,7 @@ toExcel.cluster_markers_wide <- function(df.cluster_markers, n_top_markers, exce
     group_cluster_var_name = "annotation" # add_cell_type_annotation() adds annotation column
   }
   
-  n_max_markers <- df.cluster_markers %>% dplyr::count(cluster) %>% pull(n) %>% min() # we need to find the least number of marker genes
+  n_max_markers <- df.cluster_markers %>% count(cluster) %>% pull(n) %>% min() # we need to find the least number of marker genes
   if (n_top_markers == "max") {
     n_top_markers <- n_max_markers
     print(sprintf("Max number of top markers selected: %s", n_top_markers))

@@ -1,6 +1,7 @@
 # Pascal Timshel EDIT of Seurat code (2.0)
 # October 2017.
 
+library(Seurat)
 library(cowplot)
 
 ################### MAKING FUNCTIONS AVAILABLE ###################
