@@ -199,7 +199,7 @@ toExcel.cluster_markers_wide <- function(df.cluster_markers, n_top_markers, exce
 
 ################### gProfileR enrichment ##############################
 
-# ABOUT Custom gene list as background (custom_bg): http://biit.cs.ut.ee/gprofiler/help.cgi?help_id=40
+# ABOUT gProfileR Custom gene list as background (custom_bg): http://biit.cs.ut.ee/gprofiler/help.cgi?help_id=40
 # In order to compute functional enrichments of gene lists, g:Profiler uses the backgound set of all organism-specific genes annotated in the Ensembl database.
 # In several occasions, it is advisable to limit the background set for more accurate statistics. 
 # For instance, one may use a custom background when the number of genes and corresponding probesets of a microarray platform is 
@@ -207,9 +207,12 @@ toExcel.cluster_markers_wide <- function(df.cluster_markers, n_top_markers, exce
 # g:Profiler provides means to define the custom background as a mixed list of gene, probeset and protein IDs in the corresponding form field.
 # It is also possible to select a predefined custom background from a list of popular microarray platforms. 
 
-toExcel.gprofiler_enrichment <- function(df.de, organism, ordered_query=T, custom_bg="", 
+toExcel.per_cluster_gprofiler_enrichment <- function(df.de, organism, ordered_query=T, custom_bg="", 
                                          plot_fileout_prefix=NULL, 
                                          excel_wb, sheet_name, df.cluster_annotation=NULL) {
+  ### SYNOPSIS
+  # This function runs per cluster or cluster annotation.
+  
   ### INPUT
   # df.de:                          output data frame from Seurat differential expression tests (e.g. FindAllMarkers or FindMarkers)
   #                                 MUST contain columns "gene", "cluster" [or group_cluster_var_name], "avg_logFC", "p_val".
@@ -272,6 +275,28 @@ toExcel.gprofiler_enrichment <- function(df.de, organism, ordered_query=T, custo
 
 
 
+toExcel.gprofiler_enrichment <- function(df.de, organism, ordered_query=T, custom_bg="",
+                                                     excel_wb, sheet_name) {
+  ### SYNOPSIS
+  # This function runs a enrichment test on the genes provided in the "gene" column
+  
+  ### INPUT
+  # SEE toExcel.per_cluster_gprofiler_enrichment()
+  
+  # run gprofiler
+  df.de <- df.de %>% 
+    arrange(p_val, desc(avg_logFC)) # sort (this is needed if ordered_query=T)
+    
+  df.gprofiler <- gprofiler(df.de$gene, organism=organism, ordered_query=ordered_query, significant=T, custom_bg=custom_bg)
+  
+  ### Write to excel file
+  remove_existing_excel_sheet(excel_wb, sheet_name)
+  addDataFrame(x=as.data.frame(df.gprofiler),
+               row.names=F, col.names=T,
+               sheet=createSheet(wb=excel_wb, sheetName=sheet_name))
+  
+  return(df.gprofiler) 
+}
 
 
 
