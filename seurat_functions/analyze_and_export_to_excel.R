@@ -57,11 +57,12 @@ add_cell_type_annotation <- function(df.in, df.cluster_annotation, colname_clust
 
 
 toExcel.de_analysis <- function(seurat_obj, colname_ident, ident.1, ident.2, 
-                                test.use="wilcox", 
+                                statistical_tests=c("wilcox", "negbinom"), 
                                 excel_wb, sheet_name=NULL) {
   ### INPUT
   # colname_ident:      name of any column in @meta.data that defines the grouping of ident.1 and ident.2.
   # ident.1 / ident.2   a string or vector specifying the grouping. E.g. ident.1="beta", ident.1=c(1,4) or ident.1=c("beta", "alpha")
+  # test.use            a string or character vector specifying the statistical tests to run.
   ### OUTPUT
   # df.de_analysis:     data frame result from FindMarkers
   # adds the xlsx sheet to the specified workbook.
@@ -74,10 +75,35 @@ toExcel.de_analysis <- function(seurat_obj, colname_ident, ident.1, ident.2,
   }
   
   seurat_obj <- SetAllIdent(seurat_obj, id=colname_ident) # set ident so we get the correct grouping
-  print(seurat_obj@ident %>% count())
   
-  df.de_analysis <- FindMarkers(seurat_obj, ident.1=ident.1, ident.2=ident.2, test.use=test.use)
+  list.findmarkers <- list()
+  for (test.use in statistical_tests) {
+    print(sprintf("Running FindMarkers for statistical test %s", test.use))
+    df.res <- FindMarkers(seurat_obj, ident.1=ident.1, ident.2=ident.2, test.use=test.use)
+    ### FindMarkers() OUT SNIPPET [data frame]. NOTE THAT GENE NAMERS ARE ROWNAMES AND NOT A COLUMN.
+    # p_val avg_logFC pct.1 pct.2    p_val_adj
+    # GNG11     8.794299e-19  6.014094   1.0 0.000 2.022689e-16
+    # CLU       8.794299e-19  5.869606   1.0 0.000 2.022689e-16
+    list.findmarkers[[test.use]] <- df.res %>% 
+      rename_all(funs(paste0(names(df.res), ".", test.use))) %>% 
+      rownames_to_column(var="gene") # add suffix to all columns and add gene as column
+  }
+  df.de_analysis <- plyr::join_all(list.findmarkers, type="full", by="gene") # plyr join list of data frame.
   
+
+  df.de_analysis <- df.de_analysis %>% 
+    rename( UQ(rlang::sym("logFC")) := UQ(rlang::sym(sprintf("avg_logFC.%s",statistical_tests[1]))) ) %>%  # renaming one of the avg_logFC columns. They are all the same, since they are not dependent on the statistical test.
+    rename( UQ(rlang::sym("pct1")) := UQ(rlang::sym(sprintf("pct.1.%s",statistical_tests[1]))) ) %>% # renaming one pct.1 columns
+    rename( UQ(rlang::sym("pct2")) := UQ(rlang::sym(sprintf("pct.2.%s",statistical_tests[1]))) ) %>% # renaming one pct.2 columns
+    select(-starts_with("pct."), -starts_with("avg_logFC")) %>% # remove redundant columns
+    arrange( UQ(rlang::sym(sprintf("p_val.%s", tail(statistical_tests, n=1)))) ) # sort by p_val for the last run of statistical_tests
+
+  ## alternative renaming - WORKS, but clunky...
+  # rename( UQ(rlang::sym(sprintf("logFC_%s_vs_%s", ident.1, ident.2))) := UQ(rlang::sym(sprintf("avg_logFC.%s",statistical_tests[1]))) ) %>%  # renaming one of the avg_logFC columns. They are all the same, since they are not dependent on the statistical test.
+  # rename( UQ(rlang::sym(sprintf("pct_%s", ident.1))) := UQ(rlang::sym(sprintf("pct.1.%s",statistical_tests[1]))) ) %>% # renaming one pct.1 columns
+  # rename( UQ(rlang::sym(sprintf("pct_%s", ident.2))) := UQ(rlang::sym(sprintf("pct.2.%s",statistical_tests[1]))) ) %>% # renaming one pct.2 columns
+  
+    
   ### Write to excel file
   remove_existing_excel_sheet(excel_wb, sheet_name)
   addDataFrame(x=as.data.frame(df.de_analysis),
@@ -133,7 +159,7 @@ toExcel.per_cluster_sample_composition <- function(seurat_obj, colname_cluster_i
 
 toExcel.cluster_markers <- function(df.cluster_markers, excel_wb, sheet_name="clusters.markers", df.cluster_annotation=NULL) {
   ### SEE toExcel.cluster_markers_wide for documentation
-  
+
   if (!is.null(df.cluster_annotation)) { # add cluster annotation if df.cluster_annotation is specified
     df.cluster_markers <- add_cell_type_annotation(df.cluster_markers, df.cluster_annotation, colname_cluster_id="cluster")
   }
@@ -157,6 +183,13 @@ toExcel.cluster_markers_wide <- function(df.cluster_markers, n_top_markers, exce
   #                                   'max' will export the maximal number of markers, which is the number of marker genes of the cluster with the least marker genes.
   # cluster_annotation [optional]:  data frame with mapping from Seurat cluster id to cell type annotations (UNIQUE).
   #                                 if this argument is provided, column name suffix will be the annotations and not cluster id.
+  
+  
+  # SNIPPET df.cluster_markers (output from FindAllMarkers(), includes "gene" column
+  # p_val  avg_logFC pct.1 pct.2    p_val_adj cluster    gene
+  # ODC1    0.000000e+00 -0.8609366 0.069 0.275 0.000000e+00       0    ODC1
+  # LTB     4.433493e-13  2.5034895 1.000 0.333 1.019703e-10       0     LTB
+  # LDHB    1.153312e-08  1.8824861 0.552 0.451 2.652618e-06       0    LDHB
   
   group_cluster_var_name = "cluster" # default name for cluster id column from Seurat FindAllMarkers()
   if (!is.null(df.cluster_annotation)) { # add cluster annotation if df.cluster_annotation is specified
