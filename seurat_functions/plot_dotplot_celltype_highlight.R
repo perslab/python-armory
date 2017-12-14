@@ -4,6 +4,13 @@
 library(Seurat)
 library(cowplot)
 
+
+######################## DOCUMENTATION #############################
+# df.marker.panel.to.plot MUST contain columns "cell_type" and "gene_name"
+
+
+
+
 ################### MAKING FUNCTIONS AVAILABLE ###################
 PercentAbove <- Seurat:::PercentAbove
 # REF1: https://stackoverflow.com/questions/12178830/change-internal-function-of-a-package
@@ -14,7 +21,7 @@ PercentAbove <- Seurat:::PercentAbove
 # ?fixInNamespace
 # path.package("Seurat")
 
-### data.to.plot snippet
+### data.to.plot snippet (seurat makes this)
 # id	genes.plot	avg.exp	pct.exp	avg.exp.scale	
 # 1	0	Acta2	7.31E-03	0.002913564	-0.208472888
 # 2	0	Agrp	2.94E-02	0.011330528	-0.31387005
@@ -74,6 +81,12 @@ DotPlot_timshel <- function(
   x.lab.rot = FALSE,
   df.marker.panel.to.plot
 ) {
+  
+  
+  # PT added: filter genes, to avoid errors with genes missing
+  df.marker.panel.to.plot <- filter_genes_in_seurat_data.dataframe(df.marker.panel.to.plot, seurat_obj=object, colname_gene="gene_name", do.print=T)
+  genes.plot <- filter_genes_in_seurat_data.vector(genes.plot, seurat_obj=object, do.print=F)
+  
   if (! missing(x = group.by)) {
     object <- SetAllIdent(object = object, id = group.by)
   }
@@ -135,12 +148,18 @@ DotPlot_timshel <- function(
     geom_bar(aes(fill=cell_type), show.legend=F, color="white") +
     geom_text(aes(y=id, label=cell_type), angle=90, size=rel(3)) + 
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+  # hjust=0 --> semi does not work
+  # hjust="outward" --> does not work
+  # hjust="inward" --> does not work
+  # Inward always aligns text towards the center, and outward aligns it away from the center
+  
+  
   
   # Using cowplots package to align plots and axis 
   # REF: http://htmlpreview.github.io/?https://github.com/wilkelab/cowplot/blob/master/inst/doc/introduction.html
   p_dot <- p_dot + theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
   p_markers <- p_markers + theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
-  p_grid <- plot_grid(p_dot, p_markers, ncol=1, align = "v", axis="lr", rel_heights=c(2,1))
+  p_grid <- plot_grid(p_dot, p_markers, ncol=1, align = "v", axis="lr", rel_heights=c(3,3))
   print(p_grid)
   # suppressWarnings(print(p))
   
@@ -150,6 +169,9 @@ DotPlot_timshel <- function(
     # return(df.marker.panel.to.plot)
   }
 }
+
+
+
 
 
 
