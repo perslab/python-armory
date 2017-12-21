@@ -9,7 +9,10 @@
 ############################## USAGE #################################
 ######################################################################
 
-# time Rscript analyze_two_conditions_from_raw.R --analysis_conditions lira_vs_pf |& tee analyze_two_conditions_from_raw.out.txt
+# time Rscript analyze_two_conditions_from_raw.R --analysis_conditions lira_vs_pf |& tee analyze_two_conditions_from_raw.lira_vs_pf.out.txt
+# time Rscript analyze_two_conditions_from_raw.R --analysis_conditions hfd_vs_chow |& tee analyze_two_conditions_from_raw.hfd_vs_chow.out.txt
+# time Rscript analyze_two_conditions_from_raw.R --analysis_conditions hfd_vs_pf |& tee analyze_two_conditions_from_raw.hfd_vs_pf.out.txt
+
 # time Rscript analyze_two_conditions_from_raw.R --analysis_conditions lira_vs_pf --output_prefix testX --test_run
 
 ######################################################################
@@ -57,11 +60,6 @@ FLAG_TEST_RUN <- opt$test_run # set to TRUE to load only 500 cells and a limited
 N_CORES <- opt$n_cores
 
 
-######################################################################
-########################### CONSTANTS ################################
-######################################################################
-
-
 # IMPORTANT: condition1 and condition2 names *MUST* match the folder names in /data/sc-10x/data-runs/170612-perslab-arc_lira/
 if (analysis_conditions == "lira_vs_pf") {
   condition1 <-"hfd_ad_lib_lira"
@@ -75,6 +73,11 @@ if (analysis_conditions == "lira_vs_pf") {
 } else {
   stop("Wrong argument for analysis_conditions")
 }
+
+######################################################################
+########################### CONSTANTS ################################
+######################################################################
+
 
 print(sprintf("========== RUNNING analysis_conditions = %s ==========", analysis_conditions))
 
