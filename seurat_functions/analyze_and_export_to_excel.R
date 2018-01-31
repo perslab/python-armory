@@ -169,23 +169,32 @@ de_genes_wide <- function(df.de_genes, n_top_genes, df.cluster_annotation=NULL, 
 
 ###################### Average Expression #####################
 
-average_expression <- function(seurat_obj, colname_cluster_ident, 
+average_expression <- function(seurat_obj, colname_cluster_ident, log.space=T,
                                do.excel_export=F, excel_wb=NULL, sheet_name="avg_expr") {
   ### INPUT
   # colname_cluster_ident:                name of column of seurat @meta.data to group by, e.g. 'res.0.8' or 'annotation' or 'cell_types'.
   #                                       for each variable value in colname_cluster_ident and expression average will be calculated.
+  # log.space                             if true, then return average in log-space (but averaging is done in non-log space). 
+  #                                       returning average in log-space was the default behaviour of AverageExpression prior to Seurat 2.2.
   ### Output
-  # data frame                            Averaged expression data. "Output is in log-space, but averaging is done in non-log space."
+  # data frame                            Averaged expression data. 
 
-  # AverageDetectionRate()/AverageExpression() # Returns a matrix with genes as rows, identity classes as columns.
-  df.avg_expr <- log1p(AverageExpression(SetAllIdent(seurat_obj, id=colname_cluster_ident), genes.use=NULL, return.seurat=FALSE, add.ident=NULL, use.scale=FALSE, use.raw=FALSE)) %>% rownames_to_column(var="gene")
-  # We use the data in @data slot to calculate the average expression.
-  # The data slot (object@data) stores normalized and log-transformed single cell expression. This maintains the relative abundance levels of all genes, and contains only zeros or positive values. See ?NormalizeData for more information.
-  # This data is used for visualizations, such as violin and feature plots, most differential expression tests, finding high-variance genes, and as input to ScaleData (see below).
+  df.avg_expr <- AverageExpression(SetAllIdent(seurat_obj, id=colname_cluster_ident), genes.use=NULL, return.seurat=FALSE, add.ident=NULL, use.scale=FALSE, use.raw=FALSE)
+  # AverageDetectionRate()/AverageExpression() # Returns a data frame with genes as rows, identity classes as columns.
+  if (log.space) {
+    df.avg_expr <- log1p(df.avg_expr)
+    sheet_name <- sprintf("%s.logspace", sheet_name) # update sheet name
+  }
+  df.avg_expr <- df.avg_expr %>% rownames_to_column(var="gene") # adding rownames as column.
   
   # NEW IN SEURAT VERSION 2.2: Output is in log-space when return.seurat = TRUE, otherwise it's in non-log space. Averaging is done in non-log space.
   # Use this to return average in log-space: log1p(AverageExpression(t.cells, show.progress = FALSE))
   # PRE-Version 2.2: "Output is in log-space, but averaging is done in non-log space."
+  
+  ### ABOUT the @data slot: normalized and log-transformed single cell expression but *NOT regressed*
+  # We use the data in @data slot to calculate the average expression.
+  # The data slot (object@data) stores normalized and log-transformed single cell expression. This maintains the relative abundance levels of all genes, and contains only zeros or positive values. See ?NormalizeData for more information.
+  # This data is used for visualizations, such as violin and feature plots, most differential expression tests, finding high-variance genes, and as input to ScaleData (see below).
   
   
   # Write to excel file
