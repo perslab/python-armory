@@ -18,6 +18,10 @@
 # time Rscript analyze_two_conditions_from_cell_atlas.R --analysis_conditions hfd_vs_chow |& tee analyze_two_conditions_from_cell_atlas.hfd_vs_chow.out.txt
 # time Rscript analyze_two_conditions_from_cell_atlas.R --analysis_conditions hfd_vs_pf |& tee analyze_two_conditions_from_cell_atlas.hfd_vs_pf.out.txt
 
+# time Rscript analyze_two_conditions_from_cell_atlas.R --analysis_conditions hfd_vs_lira --n_cores 10 |& tee analyze_two_conditions_from_cell_atlas.hfd_vs_lira.out.txt
+# time Rscript analyze_two_conditions_from_cell_atlas.R --analysis_conditions pf_vs_chow --n_cores 10 |& tee analyze_two_conditions_from_cell_atlas.pf_vs_chow.out.txt
+
+
 # time Rscript analyze_two_conditions_from_cell_atlas.R --analysis_conditions lira_vs_pf --output_prefix testX --test_run
 
 ######################################################################
@@ -32,7 +36,7 @@ library(optparse)
 
 option_list <- list( 
   make_option("--analysis_conditions", type="character",
-              help = "Choose from 'lira_vs_pf', 'hfd_vs_chow', 'hfd_vs_pf'"),
+              help = "Choose from 'lira_vs_pf', 'hfd_vs_chow', 'hfd_vs_pf', 'hfd_vs_lira', 'pf_vs_chow'"),
   make_option("--output_prefix", type="character", default=NULL,
               help = "Prefix for output files"),
   make_option("--test_run", action="store_true", default=FALSE, 
@@ -75,6 +79,12 @@ if (analysis_conditions == "lira_vs_pf") {
 } else if (analysis_conditions == "hfd_vs_pf") {
   condition1 <-"hfd_ad_lib"
   condition2 <-"hfd_pair_fed"
+} else if (analysis_conditions == "hfd_vs_lira") {
+  condition1 <-"hfd_ad_lib"
+  condition2 <-"hfd_ad_lib_lira"
+} else if (analysis_conditions == "pf_vs_chow") {
+  condition1 <-"hfd_pair_fed"
+  condition2 <-"chow"
 } else {
   stop("Wrong argument for analysis_conditions")
 }
