@@ -1,2 +1,2 @@
 # perslab-sc-library
-Python scripts and data files for recurrent tasks
+Python and R scripts and data files for recurrent tasks
