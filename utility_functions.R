@@ -56,8 +56,9 @@ ipak <- function(pkgs){
         install.packages(pkg, dependencies = TRUE)
       }, warning = function(war) {
         tryCatch({
-          source("https://bioconductor.org/biocLite.R")
-          biocLite(pkg, suppressUpdates = T)
+         if (!requireNamespace("BiocManager", quietly = TRUE))
+            { install.packages("BiocManager") }
+         BiocManager::install(pkg,update = F)
         }, error = function(err1) {
           warning(paste0(pkg, " encountered the error: ", err1))
           dependency <- gsub("\\W|ERROR: dependency | is not available for package.*", "", err)
