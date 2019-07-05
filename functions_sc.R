@@ -40,8 +40,8 @@ FeaturePlotPlus <- function(seurat_obj,
   
   if (length(genes) + length(unlist(metadata.feats)) >5) warning("Plotting more than five features is likely to be illegible")
   if (length(genes) + length(unlist(metadata.feats)) >17) stop("Too many features (max 17)")
-  if (!is.null(genes)) if (any(!genes %in% rownames(seurat_obj@raw.data))) {
-    stop(paste0(paste0(genes[!genes %in% rownames(seurat_obj@raw.data)], collapse= " "), " not found in seurat object raw data"))
+  if (!is.null(genes)) if (any(!genes %in% rownames(seurat_obj))) {
+    stop(paste0(paste0(genes[!genes %in% rownames(seurat_obj)], collapse= " "), " not found in seurat object raw data"))
   }
   
   #stopifnot(xor(is.null(colors.indiv), is.null(colors.comb)))
@@ -72,12 +72,12 @@ FeaturePlotPlus <- function(seurat_obj,
     comb_complement <- setdiff(genes, comb)
     
     # Get the intersect of the idx of cells expressing the genes in the combination
-    list_idx_gene <- lapply(X=comb, FUN=function(gene) seurat_obj@data[gene, ]>= detection.threshold)
+    list_idx_gene <- lapply(X=comb, FUN=function(gene) GetAssayData(seurat_obj, slot="data")[gene, ]>= detection.threshold)
     idx_comb_intersect <- Reduce(x=list_idx_gene, f = '&')
     
     # Get the **union** of the idx of the cells expressing the genes which are **not** in the combination (the complementary set of genes)
     if (length(comb_complement)>= detection.threshold) {
-      list_idx_gene_complement <- lapply(X=comb_complement, FUN=function(gene) seurat_obj@data[gene, ]>= detection.threshold)
+      list_idx_gene_complement <- lapply(X=comb_complement, FUN=function(gene) GetAssayData(seurat_obj, slot="data")[gene, ]>= detection.threshold)
       idx_comb_complement_union <- Reduce(x=list_idx_gene_complement, f = '|')
     } else {
       idx_comb_complement_union <- logical(length(idx_comb_intersect))
@@ -89,7 +89,7 @@ FeaturePlotPlus <- function(seurat_obj,
   }, comb=list_comb, name = names_comb, SIMPLIFY=F)
   
   # Make a single vector of labels 
-  vec_labels <- character(length(seurat_obj@ident))
+  vec_labels <- character(length(Idents(seurat_obj)))
   
   for (i in 1:length(list_idx_comb)) {
     vec_labels[list_idx_comb[[i]]] <- names_comb[i]
@@ -98,9 +98,9 @@ FeaturePlotPlus <- function(seurat_obj,
   vec_labels[nchar(vec_labels)==0] <- "None"#NA_character_
   
   # Add vector of labels to Seurat object as metadata
-  df_labels <- data.frame(feats_to_plot = vec_labels, row.names = colnames(seurat_obj@data))
+  df_labels <- data.frame(feats_to_plot = vec_labels, row.names = colnames(seurat_obj))
   
-  seurat_obj <- AddMetaData(seurat_obj, df_labels)
+  seurat_obj <- AddMetaData(object=seurat_obj, metadata=df_labels)
   
   # Make colors for plotting
   # make a 'primary' palette, supplementing with additional colors if needed
@@ -179,8 +179,8 @@ FeaturePlotPlus <- function(seurat_obj,
   
   list_args <- list(...) # take ... arguments
   list_args[["object"]]=seurat_obj
-  list_args[["do.label"]] = F
-  list_args[["colors.use"]] = colors_plot_hex
+  list_args[["label"]] = F
+  list_args[["cols"]] = colors_plot_hex
   list_args[["do.return"]] = T
   list_args[["group.by"]] = "feats_to_plot"
   list_args[["no.legend"]] = F
@@ -188,7 +188,7 @@ FeaturePlotPlus <- function(seurat_obj,
   list_args[["na.value"]] = "grey90"
   
   # Make the plot
-  p <- do.call(what = TSNEPlot, 
+  p <- do.call(what = DimPlot, 
                args= list_args)
   
   return(p)
@@ -481,26 +481,35 @@ gene_map <- function(dataIn,
       }
     }  else {
       if (na.rm) {
-        dataIn <- dataIn[!is.na(genes_to),,drop=F]
-        dataIn[[to]] <- genes_to[!is.na(genes_to)]
+        vec_logicalNA <- is.na(genes_to)
+        dataIn <- dataIn[!vec_logicalNA,,drop=F]
+        dataIn[[to]] <- genes_to[!vec_logicalNA]
       } else {
       dataIn[[to]] <- genes_to  
       }
     }
   } else if (class(dataIn)=="list") {
     dataIn <- lapply(dataIn, function(eachVec) {
-      oldNames <- if (class(eachVec)== "numeric") {names(eachVec)} else if (class(eachVec)=="character") {eachVec}
+      oldNames <- if (class(eachVec)== "numeric") {
+        names(eachVec)
+      } else if (class(eachVec)=="character") {
+          eachVec
+        }
       newNames <- df_mapping[[toMapCol]][match(oldNames, df_mapping[[fromMapCol]])]
-      if (na.rm) {newNames <- newNames[!is.na(newNames)]
-      eachVec <- eachVec[!is.na(newNames)]}
+      if (na.rm) {
+        vec_logicalNA <- is.na(newNames)
+        eachVec <- eachVec[!vec_logicalNA]
+        newNames <- newNames[!vec_logicalNA]
+      }
       if (class(eachVec)=="numeric") names(eachVec) <- newNames else eachVec <- newNames
       return(eachVec)
     })
   } else if (class(dataIn)=="numeric") {
     newNames <- df_mapping[[toMapCol]][match(names(dataIn), df_mapping[[fromMapCol]])]
     if (na.rm) {
-      newNames <- newNames[!is.na(newNames)]
-      dataIn <- dataIn[!is.na(newNames)]
+      vec_logicalNA <- is.na(newNames)
+      newNames <- newNames[!vec_logicalNA]
+      dataIn <- dataIn[!vec_logicalNA]
       }
     names(dataIn) <- newNames
   } else if (class(dataIn)=="character") {
@@ -511,43 +520,285 @@ gene_map <- function(dataIn,
 }
 
 ######################################################################
-############################ GSEA homemade ###########################
+############################ GSEA homemade workflow ###########################
 ######################################################################
 
-GSEA_homemade <- function(datExpr,
-                          C,
-                          S,
-                          p=1) {
-  #' @usage compute the enrichment score using the GSEA algorithm 
-  #' See Subramanian and Tamayo, 2005, PNAS
-  #' @param datExpr = # N genes * k sample expression matrix 
-  #' @param C metadata vector of length N with gene names
-  #' @param S geneset: unordered vector of gene names associated with a pathway 
-  #' @param p exponent to control how much gene correlation weights matter: 0 for equal weight, 1 for no change
+
+# We want to do these separately. Need to split in two
+
+if (F) {
   
-  stopifnot(p %in% c(0,1))
+  require(boot)
   
-  N = nrow(E)
-  k = ncol(E)
+  path_data = ""
+  data = load_obj(path_data) # add dataset here
+  statistic = mystatisticfunction # A function which when applied to data returns a vector 
+  # containing the statistic(s) of interest. When sim = "parametric", the first argument 
+  # to statistic must be the data. For each replicate a simulated dataset returned by ran.gen 
+  # will be passed. In all other cases statistic must take at least two arguments. 
+  # The first argument passed will always be the original data. The second will be a vector of indices, 
+  # frequencies or weights which define the bootstrap sample.
+  R = 10000 # number of bootstrap reps
+  indices = myindices # a vector of 'case' indices
+  parallelOperation = "multicore"
+  options("boot.parallel"="multicore")
   
-  # correlate gene profiles with metadata
-  R = abs(cor(t(datExpr), C)) %>% sort(.,decreasing=T) 
-  # Evaluate the fraction of genes in S (‘‘hits’’) weighted by their correlation up to
-  # position (gene) i 
-  P_hit_S_i = function(i) sum(R[1:i][names(R)[1:i] %in% S]^p) / sum(R[names(R)[1:i] %in% S]^p)
-  # Evaluate the fraction of genes not in S (‘‘misses’’) up to position (gene) i 
-  P_miss_S_i = function(i) 1 / (N - sum((names(R) %in% S)[1:i])) 
-  # Find the max difference in this running score
-  runningscore = sapply(1:N, function(i) P_hit_S_i - P_miss_S_i)
-  ES = runningscore[which.max(runningscore %>% abs)]
+  randomSeed = 12345
+  sim = "permutation" # i.e. draw full sample without replacement
   
-  # Compute significance by permuting C
-  # TODO 
+  bootout <- boot::boot(data=data,
+                        statistic=statistic,
+                        R = R,
+                        seed=randomSeed,
+                        sim=sim,
+                        stype="i",
+                        parallel=parallelOperation,
+                        ncpus=30,
+                        cl=NULL)
   
-  # Find leading edge subset of geneset
-  return(ES)
 }
 
+
+  
+fnc_GSEAperslab <- function(list_vec_S,
+                          fnc_geneScore=NULL,
+                          vec_R = NULL,
+                          list_vec_Rnull = NULL,
+                          vec_geneNames = NULL,
+                          negEnrichment=F,
+                          p=1,
+                          nRep=1000,
+                          randomSeed=12345,
+                          timeout = 43200,
+                          ...)  {
+  #' See Subramanian and Tamayo, 2005, PNAS
+  #' @usage compute the enrichment score using the GSEA algorithm. 
+  #' @param list_vec_S named list of unordered geneset vectors; gene naming should match datExpr 
+  #' @param fnc_geneScore function to score genes, e.g. correlation or diff expr. Class function. default NULL
+  #' @param vec_R precomputed named gene score vector. Default NULL
+  #' @param list_vec_Rnull list of precomputed NULL named gene score vectors. Default NULL
+  #' @param vec_geneNames vector of geneNames in the order they are given 
+  #' @param negEnrichment take into account negative enrichment (depletion) when computing p-values (i.e. two tailed)
+  #' @param p exponent to control how much gene correlation weights matter: 0 for equal weight, 1 for no change, defaults to 1
+  #' @param nRep number of random permutations, defaults to 1000
+  #' @param randomSeed random seed
+  #' @param timeout number of seconds to allow for computing ES, defaults to 43200 (12 hours)
+  #' @param ... appropriately named and formatted arguments to pass to fnc_geneScore. 
+  #' The first must be a numeric or logical vector of binary sample annotations indicating condition vs control
+  #' @return a list containing 
+  #'           vec_E: a named vector of E scores 
+  #'           vec_p.value: a named vector or unadjusted p-values
+  #'           parameter values of 
+  #'               fnc_geneScore, 
+  #'               negEnrichment, 
+  #'               p, 
+  #'               nRep, 
+  #'               randomSeed
+  #'           vec_R: gene score vector (either as provided or computed)
+  #'           list_vec_Rnull: list of named NULL gene score vectors (either as provided or computed)
+  #'           mat_ESnull: matrix of null ES scores. dimensions nRep * length(list_vec_S)
+  #' @depends 
+  #' parallel package
+  #' utility function safeParallel
+  
+  require(parallel)
+  require(magrittr)
+  
+  set.seed(seed = randomSeed)
+  
+  # check inputs
+  stopifnot(p %in% c(0,1), 
+            !is.null(names(list_vec_S))) # need to have two levels
+  if (!is.null(list_vec_Rnull)) if(length(list_vec_Rnull)<1000) warning("list_vec_Rnull contains fewer than 1000 null replicates")
+  stopifnot(!is.null(fnc_geneScore) | !is.null(list_vec_Rnull) & !is.null(vec_R))
+  if (!is.null(fnc_geneScore) & is.null(vec_geneNames)) stop("fnc_geneScore needs the argument vec_geneNames")
+  
+  # take ... args
+  list_args <- list(...)
+
+  # If required convert fnc_geneScore from object to character
+  # if (!"character" %in% class(fnc_geneScore)) {
+  #   fnc_geneScore <- as.character(quote(fnc_geneScore))
+  # }
+
+  # compute scores for all genes in expression data using the score function
+  if (is.null(vec_R)) {
+    fnc_geneScoreWrap <- function(fnc_geneScore, list_args)
+      {
+      vec_R <- do.call(what=fnc_geneScore, args=list_args) 
+      if(is.null(names(vec_R))) names(vec_R) <- vec_geneNames
+      vec_R <- sort(vec_R, decreasing=T) 
+    }
+    # Compute named vector of gene scores
+    vec_R <- fnc_geneScoreWrap(fnc_geneScore=fnc_geneScore, list_args=list_args)
+  }
+  
+
+  # compute ES scores
+  # see https://www.pnas.org/content/pnas/102/43/15545.full.pdf
+  fnc_ES <- function(vec_R, vec_S, p) {
+    
+    # First check if there is any overlap at all
+    if (sum(names(vec_R) %in% vec_S)==0) return(0)
+    
+    vec_logicalRinS <- names(vec_R) %in% vec_S
+    # the cum sum over the elements of vec_R which are in vec_S, divided by the sum
+    vec_hitCumSum <- vec_R %>% '['(vec_logicalRinS) %>% abs %>% '^'(p) %>% cumsum
+    vec_Phit <- vec_hitCumSum/vec_hitCumSum[length(vec_hitCumSum)]# nb: this is the sum
+    # cum sum over elements of vec_R not in S, divided by the sum
+    vec_Pmiss <- vec_logicalRinS %>% '!'(.) %>% as.numeric %>% cumsum %>% '['(vec_logicalRinS) %>% 
+      '/'(vec_logicalRinS %>% '!'(.) %>% sum)
+    # return max divergence
+    max(vec_Phit-vec_Pmiss)
+  }
+  
+  vec_ES <- sapply(list_vec_S, function(vec_S) fnc_ES(vec_S=vec_S,
+                                              vec_R=vec_R, 
+                                              p=p), simplify=T) 
+  
+  # get rid of logical(0)s
+  vec_ES[is.na(vec_ES==0)] <- 0
+  
+  # Compute significance by permuting labels
+  ## Make list of nRep random gene score vectors using permuted labels C
+  
+  if (is.null(list_vec_Rnull)) {
+    message("Preparing NULL gene weight vectors")
+    list_vec_Rnull <- lapply(1:nRep, function(i){
+      list_argsCRand <- list_args
+      list_argsCRand[[1]] <- sample(x=list_args[[1]], size = length(list_args[[1]]), replace = F)
+      suppressMessages({fnc_geneScoreWrap(fnc_geneScore=fnc_geneScore,
+                        list_args = list_argsCRand)})
+    })
+  } else {
+    # if NULL gene score vectors have been precomputed, sort them
+    list_vec_Rnull <- lapply(list_vec_Rnull, sort, decreasing=TRUE)
+    nRep = length(list_vec_Rnull)
+  }
+
+  # Compute ES scores for the 'random' R gene weight vectors
+  message("Computing GSEA E scores for null gene weight vectors")
+  mat_ESnull <- sapply(list_vec_S, function(S) {
+    suppressMessages({
+      safeParallel(fun=fnc_ES, 
+                   list_iterable=list("vec_R"=list_vec_Rnull),
+                   timeout = timeout, 
+                   vec_S = vec_S,
+                   p = p,
+                   simplify = T)})
+    }, simplify=T)
+  
+  mat_ESnull[is.na(mat_ESnull==0)] <- 0
+  
+  # Compute empirical statistical significance
+  message("Computing empirical p-values")
+  
+  fnc_pval <- function(i, ES){
+    vec_ESnull <- mat_ESnull[,i]
+    if (negEnrichment) sum(abs(c(vec_ESnull,ES))>=abs(ES)) else sum(c(vec_ESnull,ES)>=ES) %>% 
+      '/'(length(c(vec_ESnull,ES)))
+      # count at both tails using absolute values
+      # note that multiplying the p-value for the one-tailed test would be assuming 
+      # that the null distribution is symmetrical, which it probably isn't
+      # see https://www.omicsonline.org/open-access/twotailed-pvalues-calculation-in-permutationbased-tests-a-warning-against-asymptotic-bias-in-randomized-clinical-trials-2167-0870.1000145.php?aid=19520
+      # see https://stats.stackexchange.com/questions/140107/p-value-in-a-two-tail-test-with-asymmetric-null-distribution
+  }
+  
+  list_iterable <- list("i"=1:length(list_vec_S), 
+                        "ES"=vec_ES)
+    
+  vec_P <- safeParallel(fun = fnc_pval,
+                        list_iterable=list_iterable,
+                        SIMPLIFY=T)
+  
+  names(vec_P) <- names(list_vec_S)
+  
+  # prepare outputs
+  list_out <- list("vec_ES" = vec_ES, 
+                  "vec_p.value" = vec_P,
+                  "fnc_geneScore" = if (!is.null(fnc_geneScore)) as.character(quote(fnc_geneScore)) else NULL,
+                  "negEnrichment"= negEnrichment,
+                  "p" = p,
+                  "nRep" = nRep,
+                  "randomSeed" = randomSeed,
+                  "vec_R" = vec_R,
+                  "list_vec_Rnull"=list_vec_Rnull,
+                  "mat_ESnull"=mat_ESnull)
+                 
+  return(list_out)
+}
+
+
+# tests
+
+if (F) {
+  
+  
+  ### TEST 1 ###
+  # No signal expected
+
+  list_genesets <- load_obj("/projects/jonatan/genesets/c2.all.mmusculus.symbols.RData")
+  list_vec_S <- list_genesets[1:10] %>% lapply(X=., FUN=function(vec_S) {
+    paste0(substr(vec_S,1,1), tolower(substr(x=vec_S, 2, length(vec_S))))
+  })
+
+  seuratChen <- readRDS("/projects/jonatan/data/Chen_all_cells_seu3.RDS.gz")
+  seuratChen <- FindVariableFeatures(seuratChen, nfeatures = 2000)
+  seuratChenSub <- subset(seuratChen, subset=cell_type %in% c("Ependy", "GABA1"), 
+                          features=VariableFeatures(seuratChen))
+
+  
+  list_args=list()
+  list_args[["x"]] <- GetAssayData(object=seuratChenSub, slot="data") %>% as.matrix %>% t
+  list_args[["y"]] <- seuratChenSub$cell_type %>% as.factor %>% as.numeric %>% '-'(1) %>% as.matrix(.,nrow=length(.))
+  rownames(list_args[["y"]]) <- seuratChenSub$cell_type
+  list_args[["method"]]= "pearson"
+
+  fnc_geneScore="cor"
+  negEnrichment=F
+  p=1
+  nRep=10
+  randomSeed=12345
+  
+  ### TEST 2 ###
+  # expression data and annotations
+  mat_counts <- load_obj("/raid5/home/cbmr/lhv464/astrogsea.RDS")
+  mat_counts <- mat_counts[,grepl("FGF1|PF", colnames(mat_counts))]
+  keep <- rowSums(mat_counts >= 10) > 10
+  mat_counts <- mat_counts[keep,]
+  trt<-as.factor(sapply(strsplit(sapply(strsplit(colnames(mat_counts),"_"),"[",2),"\\."),"[",1))
+  
+  # genesets
+  list_genesets <- load_obj("/projects/jonatan/genesets/bmi_brain_hsapiens_190408.RDS")
+  df_orthologMapping <- load_obj("/projects/timshel/sc-genetics/sc-genetics/data/gene_annotations/gene_annotation.hsapiens_mmusculus_unique_orthologs.GRCh37.ens_v91.txt.gz")
+  df_ensemblMapping <- load_obj("/projects/timshel/sc-genetics/sc-genetics/data/gene_annotations/Mus_musculus.GRCm38.90.gene_name_version2ensembl.txt.gz")
+  list_vec_S <- sample(list_genesets, size=5, replace=F)
+  list_vec_S <- lapply(list_vec_S, function(geneset) {
+    sapply(geneset, function(gene) {
+      paste0(toupper(substr(gene,1,1)), tolower(substr(gene,2,nchar(gene))))
+      })
+    })
+  
+  list_args <- list("trt"=trt, "mat_counts"=mat_counts)
+  
+  fnc_DESeq2Wrapper <- function(trt, mat_counts) {
+    dds <- DESeq2::DESeqDataSetFromMatrix(countData = mat_counts,
+                                          colData = data.frame("trt"=trt),
+                                          design = ~ 0 + trt)  
+    dds<-DESeq2::DESeq(dds)
+    resultsObj <- DESeq2::results(dds, contrast=c("trt", "FGF1", "PF"))
+    return(resultsObj$log2FoldChange)
+  }
+  fnc_geneScore = fnc_DESeq2Wrapper
+  vec_geneNames = rownames(mat_counts)
+  negEnrichment=F
+  p=1
+  nRep=10
+  randomSeed=12345
+  
+
+  
+}
 ######################################################################
 ########################## TIMSHEL FUNCTIONS #########################
 ######################################################################

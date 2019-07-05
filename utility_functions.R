@@ -184,17 +184,26 @@ detectCores_plus <- function(Gb_max=250,
 ############################################################## safepar #####################################################################################
 ############################################################################################################################################################
 
-safeParallel = function(fun, list_iterable, simplify=F, MARGIN=NULL, n_cores=NULL, Gb_max=NULL, outfile=NULL,  ...) {
+safeParallel = function(fun, 
+                        list_iterable, 
+                        simplify=F, 
+                        MARGIN=NULL, 
+                        timeout = 1200,
+                        n_cores=NULL,
+                        Gb_max=NULL, 
+                        outfile=NULL,  ...) {
   #' @usage: calls the appropriate parallel computing function, with load balancing,
   #'          and falls back on vectorised equivalent if makeCluster hangs or the parallelised computation fails.
   #' @param fun: function to iterate over each list or vector in list_iterable
   #' @param list_iterable: a named list of vectors or lists to iterate over with fun
   #' @param simplify: whether to attempt to simplify output to a vector or matrix
   #' @param MARGIN: when iterating over a multi-dimensional object, which ones to use
+  #' @param timeout: number of seconds to wait to kill parallel operation and 
+  #' # run vectorised operation instead, defaults to 1200 (20 min)
   #' @param n_cores: number of FORK cores to use for parallel computation. If NULL, a safe estimate is
   #' made based on size of objects in the global environment and the length of the iterables in list_iterable
-  #' @param outfile: path to output log file, passed to the parallelising function
   #' @param Gb_max: Gb of RAM available; if not provided, estimated
+  #' @param outfile: path to output log file, passed to the parallelising function
   #' @param ... : additional arguments for fun to evaluate, but not iterate over
   #' @value: named list (or if args contains "SIMPLIFY" = T, a named vector or matrix); in case of failure, NULL
   #' names will be taken from first component of list_iterable
@@ -268,7 +277,12 @@ safeParallel = function(fun, list_iterable, simplify=F, MARGIN=NULL, n_cores=NUL
   if (length(list(...))) for (name in names(list(...))) list_args[[name]] <- list(...)[[name]]
 
   list_out <- tryCatch({
-    do.call(what=fnc, args = list_args)
+    # set a timeout on the function call so that, if parallelised function fails to return
+    # within time limit, return error to tryCatch
+    R.utils::withTimeout(expr={do.call(what=fnc, args = list_args)},
+                         substitute = T,
+                         timeout=timeout,
+                         onTimeout = "error")
   }, error = function(err) {
     invisible(gc())
 
@@ -383,8 +397,9 @@ verboseFnc <- function(fnc,
 ############################################################## saveMeta ####################################################################################
 ############################################################################################################################################################
 
-# TODO: add pander pandoc markdown output option?
-#require(pander)
+#' @TODO add pander pandoc markdown output option?
+#' @TODO add MD5SUM save
+#' @TODO add overwrite argument
 
 saveMeta <- function(savefnc=NULL, doPrint=F, path_log=NULL, ...) {
   #' @usage If savefnc provided, write a timestamped metadata file along with file; else write log anyway
@@ -409,7 +424,8 @@ saveMeta <- function(savefnc=NULL, doPrint=F, path_log=NULL, ...) {
   require(magrittr)
   require(utils)
   require(devtools) # for devtools::session_info()
-
+  #require(pander)
+  
   # check args
   if (is.null(savefnc) & is.null(path_log) & !doPrint) stop("saveMeta: savefnc and path_log are NULL and doPrint is FALSE, no output")
 
