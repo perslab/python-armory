@@ -195,225 +195,6 @@ FeaturePlotPlus <- function(seurat_obj,
 }
 
 ######################################################################
-########################### GENE ORTHOLOGY REMAP #####################
-######################################################################
-
-#          from_organism = c("mmusculus", "hsapiens"),
-#          to_organism = c("mmusculus", "hsapiens"))
-#          orthology_mapping_path="/projects/timshel/sc-genetics/sc-genetics/data/gene_annotations/gene_annotation.hsapiens_mmusculus_unique_orthologs.GRCh37.ens_v91.txt.gz",
-#          synonym_mapping_path="/data/genetic-mapping/ncbi/Mus_musculus.gene_info_symbol2ensembl.gz",
-
-######################################################################
-############################### DOUBLETFINDER ########################
-######################################################################
-
-# 20190507 DEPRECATED 
-# changes to original:
-# * instead of using expected.doublets as cut-off, uses outlier criterion pANN > Q3+1.5*(Q3-Q1)
-# * rename artificial doublets "thisisfake" rather than "X" to avoid issues e.g. with 10X cells!
-# * fix a bug with PCA
-
-# doubletFinder = function(seu, 
-#                          proportion.artificial = 0.25, 
-#                          proportion.NN = 0.02) 
-# {
-#   # if (expected.doublets == 0) {
-#   #   stop("Need to set number of expected doublets...")
-#   # }
-#   print("Creating artificial doublets...")
-#   data <- GetAssayData(seu, slot="counts")[, colnames(seu)]
-#   real.cells <- colnames(seu)
-#   n_real.cells <- length(real.cells)
-#   n_doublets <- round(n_real.cells/(1 - proportion.artificial) - 
-#                         n_real.cells) # these will be artificial doublets
-#   real.cells1 <- sample(real.cells, n_doublets, replace = TRUE) # draw samples of real cells of size of n artificial doublets to make
-#   real.cells2 <- sample(real.cells, n_doublets, replace = TRUE)
-#   doublets <- (data[, real.cells1] + data[, real.cells2])/2 # make artificial doublets
-#   colnames(doublets) <- paste("thisisfake", 1:n_doublets, sep = "")
-#   data_wdoublets <- cbind(data, doublets)
-#   print("Creating Seurat object...")
-#   seu_wdoublets <- Seurat::CreateSeuratObject(counts = data_wdoublets)
-#   print("Normalizing Seurat object...")
-#   seu_wdoublets <- Seurat::NormalizeData(seu_wdoublets)
-#                                          #normalization.method = seu@calc.params$NormalizeData$normalization.method, 
-#                                          #scale.factor = seu@calc.params$NormalizeData$scale.factor)
-#   print("Finding variable genes...")
-#   seu_wdoublets <- Seurat::FindVariableFeatures(seu_wdoublets)#, 
-#                                              #do.plot = FALSE, 
-#                                              #x.low.cutoff = seu@calc.params$FindVariableGenes$x.low.cutoff, 
-#                                              #x.high.cutoff = seu@calc.params$FindVariableGenes$x.high.cutoff, 
-#                                              #y.high.cutoff = seu@calc.params$FindVariableGenes$y.high.cutoff, 
-#                                              #y.cutoff = seu@calc.params$FindVariableGenes$y.cutoff)
-#   print("Scaling data...")
-#   seu_wdoublets <- Seurat::ScaleData(seu_wdoublets, block.size=15000, min.cells.to.block = 5000)
-#   
-#   print("Running PCA...")
-#   seu_wdoublets <- tryCatch({
-#     pcs.compute1 <- min(40, min(ncol(GetAssayData(seu_wdoublets, slot="scale.data")), length(VariableFeatures(seu_wdoublets)))%/%2)
-#     Seurat::RunPCA(seu_wdoublets, 
-#                    #pc.genes = seu_wdoublets@var.genes, 
-#                    do.print = F,
-#                    pcs.compute = pcs.compute1,
-#                    verbose=T)
-#   }, error= function(err) {
-#     pcs.compute2 <- min(20, min(ncol(seu_wdoublets@scale.data), length(seu_wdoublets@var.genes))%/%3)
-#     warning(paste0("RunPCA failed with ", pcs.compute1," components, trying again with ", pcs.compute2, " components"))
-#     Seurat::RunPCA(seu_wdoublets, 
-#                    #pc.genes = seu_wdoublets@var.genes, 
-#                    do.print = F,
-#                    pcs.compute = pcs.compute2,
-#                    verbose=T)}) 
-#   
-#   cell.names <- colnames(seu_wdoublets)
-#   nCells <- length(cell.names)
-#   print("Calculating PC distance matrix...")
-#   #PCs <- 1:min(max(seu@calc.params$RunTSNE$dims.use), ncol(seu_wdoublets@dr$pca@cell.embeddings))
-#   PCs <- 1:ncol(Embeddings(object=seu_wdoublets, reduction="pca"))
-#   if (length(PCs) == 0) {
-#    stop("Need to run tSNE on original Seurat object...")
-#   }
-#   pca.coord <- Embeddings(object=seu_wdoublets, reduction="pca")#seu_wdoublets@dr$pca@cell.embeddings[, PCs]
-#   rm(seu_wdoublets)
-#   gc()
-#   dist.mat <- as.matrix(dist(pca.coord)) # distances in PCA space
-#   dist.mat <- dist.mat[, -grep("thisisfake", colnames(dist.mat))] # so keep fake cell rows but not columns
-#   pANN <- as.data.frame(matrix(0L, nrow = n_real.cells, ncol = 1))
-#   rownames(pANN) <- real.cells
-#   colnames(pANN) <- "pANN"
-#   k <- round(nCells * proportion.NN) # k is how many neighbours to check
-#   for (i in 1:n_real.cells) { # i goes up to the last real cell in the distance matrix
-#     neighbors <- order(dist.mat[, i]) # all cell numbers ranked by distance (i.e. closest first)
-#     neighbors <- neighbors[2:(k + 1)] # get k nearest neighbours
-#     neighbor.names <- rownames(dist.mat)[neighbors] # these will be cell names. Artificial cells have "X" in them
-#     pANN[i, 1] <- length(grep("thisisfake", neighbor.names))/k # for real cell i, how big a proportion of k nearest neighbours are artificial?
-#   }
-#   seu[["pANN"]] <- pANN # add props fake neighbours to original (real) seurat obj
-#   predictions <- as.data.frame(rep("Singlet", n_real.cells), 
-#                                ncol = 1, row.names = real.cells , stringsAsFactors = FALSE) # initialise prediction metadata column
-#   ### modified @author Jonatan Thompson, jjt3f2188@gmail.com  @date 181108 ###
-#   Q1 <- quantile(x = pANN[,1], probs=0.25)
-#   Q3 <- quantile(x = pANN[,1], probs=0.75)
-#   pANN_inter_Q_range <- as.numeric(Q3-Q1)
-#   doublet.predictions <- colnames(seu)[pANN>Q3+1.5*(Q3-Q1)]
-#   # doublet.predictions <- rownames(seu@meta.data)[order(seu@meta.data$pANN, 
-#   #                                                      decreasing = TRUE)] # order real cells by prop fake neighbours 
-#   # doublet.predictions <- doublet.predictions[1:expected.doublets] # take the top of the list, based on absolute number
-#   # 
-#   predictions[doublet.predictions, ] <- "Doublet"
-#   colnames(predictions) <- "pANNPredictions"
-#   seu[["pANNPredictions"]] <-  predictions
-#   return(seu)
-# }
-
-
-######################################################################
-#################### BACKGROUND FINDER ###############################
-######################################################################
-
-# backgroundFinder = function(seu, 
-#                          background, 
-#                          proportion.NN = 0.02) 
-# {
-#   # if (expected.doublets == 0) {
-#   #   stop("Need to set number of expected doublets...")
-#   # }
-#   #print("Creating artificial doublets...")
-#   data <- seu@raw.data[, seu@cell.names]
-#   real.cells <- seu@cell.names
-#   n_real.cells <- length(real.cells)
-#   #n_doublets <- round(n_real.cells/(1 - proportion.artificial) - 
-#   #                      n_real.cells) # these will be artificial doublets
-#   #real.cells1 <- sample(real.cells, n_doublets, replace = TRUE) # draw samples of real cells of size of n artificial doublets to make
-#   #real.cells2 <- sample(real.cells, n_doublets, replace = TRUE)
-#   #doublets <- (data[, real.cells1] + data[, real.cells2])/2 # make artificial doublets
-#   colnames(background) <- paste("background_",colnames(background), sep = "")
-#   data_wbackground <- cbind(data, background)
-#   print("Creating Seurat object...")
-#   seu_wbackground <- Seurat::CreateSeuratObject(raw.data = data_wbackground)
-#   print("Normalizing Seurat object...")
-#   seu_wbackground <- Seurat::NormalizeData(seu_wbackground)
-#   print("Finding variable genes...")
-#   seu_wbackground <- Seurat::FindVariableGenes(seu_wbackground, 
-#                                              do.plot = FALSE)
-#   print("Scaling data...")
-#   seu_wbackground <- Seurat::ScaleData(seu_wbackground, display.progress = TRUE)
-#   print("Running PCA...")
-#   seu_wbackground <- tryCatch({
-#     pcs.compute1 <- min(40, min(ncol(seu_wbackground@scale.data), length(seu_wbackground@var.genes))%/%2)
-#     Seurat::RunPCA(seu_wbackground, 
-#                    pc.genes = seu_wbackground@var.genes, 
-#                    pcs.print = 0,
-#                    pcs.compute = pcs.compute1,
-#                    verbose=T)
-#   }, error= function(err) {
-#     pcs.compute2 <- min(20, min(ncol(seu_wbackground@scale.data), length(seu_wbackground@var.genes))%/%3)
-#     warning(paste0("RunPCA failed with ", pcs.compute1," components, trying again with ", pcs.compute2, " components"))
-#     Seurat::RunPCA(seu_wbackground, 
-#                    pc.genes = seu_wbackground@var.genes, 
-#                    pcs.print = 0,
-#                    pcs.compute = pcs.compute2,
-#                    verbose=T)}) 
-#   
-#   cell.names <- seu_wbackground@cell.names
-#   nCells <- length(cell.names)
-#   print("Calculating PC distance matrix...")
-#   PCs <- 1:ncol(seu_wbackground@dr$pca@cell.embeddings)
-#   if (length(PCs) == 0) {
-#     stop("Need to run tSNE on original Seurat object...")
-#   }
-#   pca.coord <- seu_wbackground@dr$pca@cell.embeddings[, PCs]
-#   rm(seu_wbackground)
-#   gc()
-#   dist.mat <- as.matrix(dist(pca.coord)) # distances in PCA space
-#   dist.mat <- dist.mat[, -grep("_background", colnames(dist.mat))] # so keep fake cell rows but not columns
-#   pbackground <- as.data.frame(matrix(0L, nrow = n_real.cells, ncol = 1))
-#   rownames(pbackground) <- real.cells
-#   colnames(pbackground) <- "pbackground"
-#   k <- round(nCells * proportion.NN) # k is how many neighbours to check
-#   for (i in 1:n_real.cells) { # i goes up to the last real cell in the distance matrix
-#     neighbors <- order(dist.mat[, i]) # all cell numbers ranked by distance (i.e. closest first)
-#     neighbors <- neighbors[2:(k + 1)] # get k nearest neighbours
-#     neighbor.names <- rownames(dist.mat)[neighbors] # these will be cell names. Artificial cells have "X" in them
-#     pbackground[i, 1] <- length(grep("_background", neighbor.names))/k # for real cell i, how big a proportion of k nearest neighbours are artificial?
-#   }
-#   seu <- Seurat::AddMetaData(seu, metadata = pbackground, col.name = "pbackground") # add props fake neighbours to original (real) seurat obj
-#   predictions <- as.data.frame(rep("real_cell", n_real.cells), 
-#                                ncol = 1, stringsAsFactors = FALSE) # initialise prediction metadata column
-#   rownames(predictions) <- real.cells 
-#   ### modified @author Jonatan Thompson, jjt3f2188@gmail.com  @date 181108 ###
-#   pbackgroundsummary <- summary(seu@meta.data$pbackground) 
-#   Q1 <- as.numeric(pbackgroundsummary[2])
-#   Q3 <- as.numeric(pbackgroundsummary[5])
-#   pbackground_inter_Q_range <- as.numeric(Q3-Q1)
-#   background.predictions <- rownames(seu@meta.data)[pbackground>Q3+1.5*(Q3-Q1)]
-#   # doublet.predictions <- rownames(seu@meta.data)[order(seu@meta.data$pbackground, 
-#   #                                                      decreasing = TRUE)] # order real cells by prop fake neighbours 
-#   # doublet.predictions <- doublet.predictions[1:expected.background] # take the top of the list, based on absolute number
-#   # 
-#   predictions[background.predictions, ] <- "background"
-#   colnames(predictions) <- "background_predictions"
-#   seu <- Seurat::AddMetaData(seu, metadata = predictions, 
-#                              col.name = "background_predictions")
-#   return(seu)
-# }
-
-# # test backgroundfinder
-# if (FALSE) {
-# 
-#   data_tmp <- Seurat::Read10X(data.dir = "/nfsdata/data/sc-10x/data-runs/180511-perslab-immunometab/242L-5000_cells/outs/raw_gene_bc_matrices/hg19/")
-#   n_cells <- 1749
-#   background_start <- 6000
-#   n_background <- n_cells%/%3
-#   data_tmp %>% colSums -> nUMI_sums
-#   nUMI_sums %>% rank -> rank_tmp
-#   idx_background <- which(rank_tmp <= (length(rank_tmp)-background_start) & rank_tmp > (length(rank_tmp)-(background_start+n_background))) 
-#   background= data_tmp[, idx_background]
-#   
-#   # TODO: need to process bacground befpre
-#   
-# }
-
-######################################################################
 ############################ GENE MAP ################################
 ######################################################################
 
@@ -445,7 +226,7 @@ gene_map <- function(dataIn,
   #                     to="gene_name_optimal",
   #                     replace=T,
   #                     na.rm=T)
-  # orthologue mapping:
+  # ortholog mapping:
   # /projects/timshel/sc-genetics/sc-genetics/data/gene_annotations/gene_annotation.hsapiens_mmusculus_unique_orthologs.GRCh37.ens_v91.txt.gz
   
   stopifnot(class(df_mapping)=="data.frame")
@@ -524,10 +305,10 @@ gene_map <- function(dataIn,
 ######################################################################
 
 
-# We want to do these separately. Need to split in two
 
 if (F) {
   
+  # Generate null replicas of the gene weight vector (assigning a value to all genes) used in GSEA
   require(boot)
   
   path_data = ""
@@ -559,7 +340,6 @@ if (F) {
 }
 
 
-  
 fnc_GSEAperslab <- function(list_vec_S,
                           fnc_geneScore=NULL,
                           vec_R = NULL,
@@ -600,7 +380,7 @@ fnc_GSEAperslab <- function(list_vec_S,
   #' @depends 
   #' parallel package
   #' utility function safeParallel
-  
+
   require(parallel)
   require(magrittr)
   
@@ -627,27 +407,33 @@ fnc_GSEAperslab <- function(list_vec_S,
       {
       vec_R <- do.call(what=fnc_geneScore, args=list_args) 
       if(is.null(names(vec_R))) names(vec_R) <- vec_geneNames
-      vec_R <- sort(vec_R, decreasing=T) 
     }
     # Compute named vector of gene scores
     vec_R <- fnc_geneScoreWrap(fnc_geneScore=fnc_geneScore, list_args=list_args)
-  }
+  } 
   
+  vec_R <- sort(vec_R, decreasing=T) 
 
   # compute ES scores
   # see https://www.pnas.org/content/pnas/102/43/15545.full.pdf
   fnc_ES <- function(vec_R, vec_S, p) {
     
+    vec_R <- sort(vec_R, decreasing=T)
     # First check if there is any overlap at all
     if (sum(names(vec_R) %in% vec_S)==0) return(0)
     
     vec_logicalRinS <- names(vec_R) %in% vec_S
     # the cum sum over the elements of vec_R which are in vec_S, divided by the sum
-    vec_hitCumSum <- vec_R %>% '['(vec_logicalRinS) %>% abs %>% '^'(p) %>% cumsum
-    vec_Phit <- vec_hitCumSum/vec_hitCumSum[length(vec_hitCumSum)]# nb: this is the sum
+    vec_Rhit <- vec_R
+    vec_Rhit[!vec_logicalRinS] <- 0
+    vec_hitCumSum <- vec_Rhit %>% abs %>% '^'(p) %>% cumsum
+    vec_Phit <- vec_hitCumSum/vec_hitCumSum[length(vec_hitCumSum)]
+    # nb: the denominator is just the sum
     # cum sum over elements of vec_R not in S, divided by the sum
-    vec_Pmiss <- vec_logicalRinS %>% '!'(.) %>% as.numeric %>% cumsum %>% '['(vec_logicalRinS) %>% 
-      '/'(vec_logicalRinS %>% '!'(.) %>% sum)
+    vec_missCumSum <- vec_logicalRinS %>% '!'(.) %>% as.numeric %>% cumsum 
+    vec_Pmiss = vec_missCumSum / vec_missCumSum[length(vec_missCumSum)]
+    # nb: the denominator is just the sum
+    
     # return max divergence
     max(vec_Phit-vec_Pmiss)
   }
@@ -678,7 +464,7 @@ fnc_GSEAperslab <- function(list_vec_S,
 
   # Compute ES scores for the 'random' R gene weight vectors
   message("Computing GSEA E scores for null gene weight vectors")
-  mat_ESnull <- sapply(list_vec_S, function(S) {
+  mat_ESnull <- sapply(list_vec_S, function(vec_S) {
     suppressMessages({
       safeParallel(fun=fnc_ES, 
                    list_iterable=list("vec_R"=list_vec_Rnull),
@@ -797,8 +583,41 @@ if (F) {
   randomSeed=12345
   
 
-  
 }
+
+
+
+fnc_GSEABroad <- function(gsea_jar="/projects/jonatan/tools/gene_set_enrichment/GSEA/gsea-3.0.jar",
+                        dest_gmt_file,
+                        rnk_file,
+                        num_randomizations,
+                        analysis_name,
+                        rand_working_dir) {
+  #' @usage call GSEA java implementation
+  #' @param gsea_jar 
+  #' @param dest_gmt_file
+  #' @param rkn_file
+  #' @param num_randomizations a 
+  #' @param analysis_name
+  #' @param rand_working_dir
+  #' @return NULL
+  
+  # copied from https://baderlab.github.io/Cytoscape_workflows/EnrichmentMapPipeline/Supplemental_protocol_4_manual_phenotype_rand_with_edgeR.html#118_run_gsea
+  
+  start_gs_perm <- Sys.time()
+  command <- paste("java  -Xmx1G -cp ",gsea_jar,  " xtools.gsea.GseaPreranked -gmx ", 
+                   dest_gmt_file, "-rnk " ,rnk_file, 
+                   "-collapse false -nperm ",num_randomizations, 
+                   " -permute gene_set -scoring_scheme weighted -rpt_label ",
+                   paste(analysis_name,"gsrand",sep="_"),
+                   " -num 100 -plot_top_x 20 -rnd_seed 12345  -set_max 200 -set_min 15 -zip_report false -out " ,
+                   rand_working_dir, "-gui false > gsea_output.txt",sep=" ")
+  system(command)
+  stop_gs_perm <- Sys.time()
+  difftime(stop_gs_perm,start_gs_perm,"mins")
+}
+
+
 ######################################################################
 ########################## TIMSHEL FUNCTIONS #########################
 ######################################################################

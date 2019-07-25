@@ -40,41 +40,34 @@ LocationOfThisScript = function() # Function LocationOfThisScript returns the lo
 ########################################################### INSTALL PACKAGES ###############################################################################
 ############################################################################################################################################################
 
-# install and require packages using a function (allows for automation)
-ipak <- function(pkgs){
-  #' @usage attempt to install and load packages
+ipak <- function(pkgs, update=F){
+  #' @usage attempt to install and load packages from getOption("repos") and Bioconductor
   #' @example
-  #' packages <- c("ggplot2", "plyr", "reshape2", "RColorBrewer", "scales", "grid")
-  #  ipak(packages)
+  #  ipak( c("ggplot2", "plyr", "reshape2", "RColorBrewer", "scales", "grid") )
   #' @param pkgs: vector of packages to install/load; character
+  #' @param update: logical, whether to update installed packages if new versions are available
   #' @value none
+  #' @depends parallel::detectCores_plus() utility function
+
+  if (!requireNamespace("BiocManager", quietly = TRUE))
+  { install.packages("BiocManager") }
 
   new.pkgs <- pkgs[!(pkgs %in% installed.packages()[, "Package"])]
-  if (length(new.pkgs)) {
-    sapply(new.pkgs, function(pkg) {
-      tryCatch({
-        install.packages(pkg, dependencies = TRUE)
-      }, warning = function(war) {
-        tryCatch({
-         if (!requireNamespace("BiocManager", quietly = TRUE))
-            { install.packages("BiocManager") }
-         BiocManager::install(pkg,update = F)
-        }, error = function(err1) {
-          warning(paste0(pkg, " encountered the error: ", err1))
-          dependency <- gsub("\\W|ERROR: dependency | is not available for package.*", "", err)
-          ipak(dependency)
-        })
-      } ,
-      error = function(err)
-      {
-        dependency <- gsub("\\W|ERROR: dependency | is not available for package.*", "", err)
-        ipak(dependency)
-      })
+  new.pkgs.repos <- new.pkgs[new.pkgs %in% available.packages(repos = getOption("repos"))]
+  new.pkgs.bioc <- new.pkgs[!new.pkgs %in% BiocManager::available()]
+
+  # report unavailable packages
+  notfound <- new.pkgs[!new.pkgs %in% c(new.pkgs.repos, new.pkgs.bioc)]
+  #failed <- pkgs[!(pkgs %in% installed.packages()[, "Package"])]
+  if (length(notfound)) warning(paste0(paste0(notfound, collapse = " "), " not found in default repos nor Bioconductor"))
+
+  if (length(new.pkgs.bioc)) {
+    sapply(new.pkgs.bioc, function(pkg) {
+      BiocManager::install(pkgs = pkg, update=update, envir = .GlobalEnv, dependencies=T)
     })
   }
-  suppressPackageStartupMessages(sapply(pkgs, require, character.only = TRUE))
-  failed <- pkgs[!(pkgs %in% installed.packages()[, "Package"])]
-  if (length(failed)>0) warning(paste0(paste0(failed, collapse = " "), " failed to install"))
+  # attach packages into global namespace
+  if (length(notfound)<length(pkgs)) suppressPackageStartupMessages(invisible(sapply(pkgs[!pkgs %in% notfound], require, character.only = TRUE)))
 }
 
 ############################################################################################################################################################
@@ -130,33 +123,27 @@ dlfile <- function(url, destfile, correct_checksum) {
 ############################################################################################################################################################
 
 load_obj <- function(f) {
-  #' @usage Loads (gzip compressed) file from .RData, .RDS, .loom, .csv, .txt, .tab, .delim
+  #' @usage Loads (compressed) file from .RData, .RDS, .loom, .csv, .txt, .tab, .delim
   #' @param f: path to file
-  #' @value RObject
-
-  compressed = F
-
-  if (grepl(pattern = "\\.gz|\\.gzip", x=f))  {
-    compressed <- T
-    f = paste0("gzfile('",f,"')")
-  }
-
+  #' @value object
   if (grepl(pattern = "\\.RDS", x = f, ignore.case = T)) {
-    out <- readRDS(file=if(compressed) eval(parse(text=f)) else f)
-  } else if (grepl(pattern="\\.RData|\\.Rda", x=f, ignore.case = T)) {
+    out <- readRDS(file=f)
+  } else if (grepl(pattern="\\.Rda.*", x=f, ignore.case = T)) {
     env <- new.env()
     nm <- load(f, env)[1]
     out <- env[[nm]]
   } else if (grepl(pattern="\\.loom", x=f)) {
+    require(loomR)
     out <- connect(filename=f, mode = "r+")
   } else if (grepl(pattern = "\\.csv", x=f)) {
-    out <- read.csv(file=if(compressed) eval(parse(text=f)) else f, stringsAsFactors = F, quote="", header=T)
+    out <- read.csv(file= f, stringsAsFactors = F, quote="", header=T)
   } else if (grepl(pattern = "\\.tab|\\.tsv", x=f)) {
-    out <- read.table(file=if(compressed) eval(parse(text=f)) else f, sep="\t", stringsAsFactors = F, quote="", header=T)
+    out <- read.table(file=f, sep="\t", stringsAsFactors = F, quote="", header=T)
   } else if (grepl(pattern = "\\.txt", x=f)) {
-    out <- read.delim(file=if(compressed) eval(parse(text=f)) else f, stringsAsFactors = F, quote="", header=T)
+    out <- read.delim(file=f, stringsAsFactors = F, quote="", header=T)
   }
-  out
+  closeAllConnections()
+  return(out)
 }
 
 ############################################################################################################################################################
@@ -171,34 +158,33 @@ if (FALSE) sapply(ls(), function(x) object.size(eval(parse(text=x)))) %>% sort(.
 
 detectCores_plus <- function(Gb_max=250,
                              additional_Gb=1) {
-  # args:
-  #  Gb_max: ceiling on session memory usage in Gb, assuming that each worker duplicates the session memory
-  #  additional_Gb: max additional memory requirement for new (temporary) objects created within a parallel session
-  # value:
-  #   n_cores (integer)
+  #' @param Gb_max ceiling on session memory usage in Gb, assuming that each worker duplicates the session memory
+  #' @param additional_Gb: max additional memory requirement for new (temporary) objects created within a parallel session
+  #' @returns: max number of cores (integer)
+  #' @depends parallel package
   obj_size_Gb <- as.numeric(sum(sapply(ls(envir = .GlobalEnv), function(x) object.size(x=eval(parse(text=x))))) / 1024^3)
-  max(1, min(detectCores(), Gb_max %/% (obj_size_Gb + additional_Gb))-1)
+  max(1, min(parallel::detectCores(), Gb_max %/% (obj_size_Gb + additional_Gb))-1)
 }
 
 ############################################################################################################################################################
 ############################################################## safepar #####################################################################################
 ############################################################################################################################################################
 
-safeParallel = function(fun, 
-                        list_iterable, 
-                        simplify=F, 
-                        MARGIN=NULL, 
+safeParallel = function(fun,
+                        list_iterable,
+                        simplify=F,
+                        MARGIN=NULL,
                         timeout = 1200,
                         n_cores=NULL,
-                        Gb_max=NULL, 
+                        Gb_max=NULL,
                         outfile=NULL,  ...) {
   #' @usage: calls the appropriate parallel computing function, with load balancing,
   #'          and falls back on vectorised equivalent if makeCluster hangs or the parallelised computation fails.
   #' @param fun: function to iterate over each list or vector in list_iterable
   #' @param list_iterable: a named list of vectors or lists to iterate over with fun
   #' @param simplify: whether to attempt to simplify output to a vector or matrix
-  #' @param MARGIN: when iterating over a multi-dimensional object, which ones to use
-  #' @param timeout: number of seconds to wait to kill parallel operation and 
+  #' @param MARGIN: when iterating over a multi-dimensional object, which dimension to use
+  #' @param timeout: number of seconds to wait to kill parallel operation and
   #' # run vectorised operation instead, defaults to 1200 (20 min)
   #' @param n_cores: number of FORK cores to use for parallel computation. If NULL, a safe estimate is
   #' made based on size of objects in the global environment and the length of the iterables in list_iterable
@@ -413,6 +399,7 @@ saveMeta <- function(savefnc=NULL, doPrint=F, path_log=NULL, ...) {
   #' @param savefnc a function to write some file to disk. If given as object is converted to character, default NULL
   #' @param doPrint print output to screen? useful if directin Rscript stdout to a log file (&>), default F
   #' @param path_log specify log file path; defaults to creating a file in current working dir, default NULL
+#  #' @param msg string,  message to add at the top of the log file
   #' @param ... arguments to pass on to savefnc
   #' @value NULL
   #' @examples
@@ -425,7 +412,7 @@ saveMeta <- function(savefnc=NULL, doPrint=F, path_log=NULL, ...) {
   require(utils)
   require(devtools) # for devtools::session_info()
   #require(pander)
-  
+
   # check args
   if (is.null(savefnc) & is.null(path_log) & !doPrint) stop("saveMeta: savefnc and path_log are NULL and doPrint is FALSE, no output")
 
@@ -463,6 +450,13 @@ saveMeta <- function(savefnc=NULL, doPrint=F, path_log=NULL, ...) {
   cat(text="-Environment-----------------------------------", file=path_log, sep = "\n", append=T)
   capture.output(ls.str(envir = .GlobalEnv)) %>% cat(... = ., file=path_log, sep="\n", append=T)
 
+  # if (!is.null(msg)) {
+  #   path_msg = "~/msg_tmp.txt"
+  #   write.table(x = msg, file = path_msg, quote = F, sep="\t")
+  #   system2(command="cat", args=c(path_msg, path_log, paste0(" > ", path_log)), stdout=F, stderr=F)
+  #   system2(command="rm", args=c(path_msg), stdout=F, stderr=F)
+  # }
+
   # git commit: check parent directory for .git file
   path_parent <- gsub("[^/]*$","", path_log)
   path_parent <- substr(x=path_parent,1,nchar(path_parent)-1)
@@ -481,18 +475,18 @@ saveMeta <- function(savefnc=NULL, doPrint=F, path_log=NULL, ...) {
     gitCommitEntry <- NULL
   }
 
-  #date
-  cat("\n", file=path_log, append=T)
-  cat(text="-Date, time------------------------------------", file=path_log, sep = "\n", append=T)
-  cat(text = flag_date, file = path_log, append=T, sep = "\n")
-  cat(text="-----------------------------------------------", file=path_log, sep = "\n", append=T)
-
+    #date
+  # cat("\n", file=path_log, append=T)
+  # cat(text="-Date, time------------------------------------", file=path_log, sep = "\n", append=T)
+  # cat(text = flag_date, file = path_log, append=T, sep = "\n")
+  # cat(text="-----------------------------------------------", file=path_log, sep = "\n", append=T)
 
   if (doPrint) {
     # same as above, but print
 
     #date
-    message(x = flag_date, appendLF = T)
+    #message(x = flag_date, appendLF = T)
+    #if (!is.null(msg)) print(msg)
 
     devtools::session_info() %>% print
 
