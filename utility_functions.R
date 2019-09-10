@@ -5,6 +5,7 @@
 ####################################################### GET SCRIPT DIRECTORY ###############################################################################
 ############################################################################################################################################################
 
+# NB: probably rendered redundant by "here" package
 LocationOfThisScript = function() # Function LocationOfThisScript returns the location of this .R script (may be needed to source other files in same dir)
 {
   #' @usage returns the current location of the script
@@ -40,7 +41,9 @@ LocationOfThisScript = function() # Function LocationOfThisScript returns the lo
 ########################################################### INSTALL PACKAGES ###############################################################################
 ############################################################################################################################################################
 
-ipak <- function(pkgs, update=F){
+# TODO: enable recursive installation for BiocManager packages
+
+ipak <- function(pkgs, update=F, lib.loc=NULL){
   #' @usage attempt to install and load packages from getOption("repos") and Bioconductor
   #' @example
   #  ipak( c("ggplot2", "plyr", "reshape2", "RColorBrewer", "scales", "grid") )
@@ -52,7 +55,7 @@ ipak <- function(pkgs, update=F){
   if (!requireNamespace("BiocManager", quietly = TRUE))
   { install.packages("BiocManager") }
 
-  new.pkgs <- pkgs[!(pkgs %in% installed.packages()[, "Package"])]
+  new.pkgs <- pkgs[!(pkgs %in% installed.packages(lib.loc=lib.loc)[, "Package"])]
   new.pkgs.repos <- new.pkgs[new.pkgs %in% available.packages(repos = getOption("repos"))]
   new.pkgs.bioc <- new.pkgs[!new.pkgs %in% BiocManager::available()]
 
@@ -62,12 +65,52 @@ ipak <- function(pkgs, update=F){
   if (length(notfound)) warning(paste0(paste0(notfound, collapse = " "), " not found in default repos nor Bioconductor"))
 
   if (length(new.pkgs.bioc)) {
+    message(paste0("installing ", paste0(new.pkgs.bioc, collapse=", "), " from BioConductor"))
     sapply(new.pkgs.bioc, function(pkg) {
       BiocManager::install(pkgs = pkg, update=update, envir = .GlobalEnv, dependencies=T)
     })
   }
+
+  fnc_libPkgWDep <- function(pkg,
+                             lib.loc) {
+    #' @usage if loading a package from non-default library which depends on other packages
+    #' in same non-default library, recursively load dependencies
+    pkgDes <- packageDescription(pkg,
+                                 lib.loc = lib.loc)
+
+    vec_depends = vec_imports = c()
+
+    # depends <- pkgDes[["Depends"]]
+    # if (length(depends)) {
+    #   vec_depends <- strsplit(x=depends, split=",")[[1]]
+    #   vec_depends <- vec_depends[!grepl("R (>=", vec_depends, fixed = T)]
+    #   vec_depends <- gsub("\\ \\(>=.*|\\\\","", vec_depends)
+    #   vec_depends <- gsub("[^a-z]","", vec_depends, ignore.case = T)
+    # }
+
+    imports <- try(expr = pkgDes[["Imports"]], silent = T)
+
+    if ("try-error" %in% class(imports)) {
+      if (length(imports)) {
+        vec_imports <- strsplit(x=imports, split=",")[[1]]
+        vec_imports <- vec_imports[!grepl("R (>=", vec_imports, fixed = T)]
+        vec_imports <- gsub("\\|\\ |\\(>=.*","", vec_imports)
+        vec_imports <- gsub("[^a-z]","", vec_imports, ignore.case = T)
+      }
+      #if (length(c(vec_depends, vec_imports))) sapply(c(vec_depends, vec_imports),  ipak, lib.loc=lib.loc)
+      if (length(c(vec_imports))) sapply(c(vec_imports),  ipak, lib.loc=lib.loc)
+    }
+    library(package=pkg, lib.loc=lib.loc, character.only = T)
+  }
   # attach packages into global namespace
-  if (length(notfound)<length(pkgs)) suppressPackageStartupMessages(invisible(sapply(pkgs[!pkgs %in% notfound], require, character.only = TRUE)))
+  if (length(notfound)<length(pkgs)) {
+    suppressPackageStartupMessages(
+      invisible(
+        sapply(pkgs[!pkgs %in% notfound],
+               FUN=fnc_libPkgWDep,
+               lib.loc=lib.loc
+    )))
+  }
 }
 
 ############################################################################################################################################################
