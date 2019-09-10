@@ -169,6 +169,10 @@ load_obj <- function(f) {
   #' @usage Loads (compressed) file from .RData, .RDS, .loom, .csv, .txt, .tab, .delim
   #' @param f: path to file
   #' @value object
+  #' 
+  
+  stopifnot(file.exists(f))
+  
   if (grepl(pattern = "\\.RDS", x = f, ignore.case = T)) {
     out <- readRDS(file=f)
   } else if (grepl(pattern="\\.Rda.*", x=f, ignore.case = T)) {
