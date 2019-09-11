@@ -691,6 +691,35 @@ fnc_GSEABroad <- function(gsea_jar="/projects/jonatan/tools/gene_set_enrichment/
 }
 
 
+calcVIF_JT_1 <- function(datExpr, list_genesets) {
+  #' @usage compute Variance Inflation Factors for genesets using an expression dataset
+  #' @ref modified from https://rdrr.io/bioc/qusage/src/R/qusage.R
+  #'      drawing on https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3458527/
+  #' @param datExpr: gene * cell expression matrix with row and column names
+  #' @param list_genesets: list of genesets, using same gene names as datExpr
+  #' @return list of vectors, one per geneset. First vector element is VIF, second is mean Pearson's rho correlation.
+  #' @example list_vec_VIF <- calcVIF_JT_1(datExpr=mat_counts, list_genesets=mylist)
+  
+  list_vec_vif = lapply(names(list_genesets), function(genesetname) {
+    vec_logicalgenes <-rownames(datExpr) %in% list_genesets[[genesetname]]
+    #GNames <- rownames(datExpr)[vec_logicalgenes]
+    #gs.i = which(vec_logicalgenes)
+    if (sum(vec_logicalgenes) < 2) {
+      warning("GeneSet '", genesetname, "' contains one or zero overlapping genes. NAs produced.")
+      return(NA)
+    }
+    cor.mat <- cor(t(datExpr[vec_logicalgenes, ]), use = "pairwise.complete.obs")
+    cor.mat[is.na(cor.mat)] <- 0
+    (cor.mat - Diagonal(x = diag(cor.mat))) %>% mean -> mean.cor  
+    
+    vif <- 1+(sum(vec_logicalgenes)-1)*mean.cor
+    return(c("vif"=vif, "mean.cor"=mean.cor))
+  })
+  names(list_vec_vif) <- names(list_genesets)
+  return(list_vec_vif)
+}
+
+
 ######################################################################
 ########################## TIMSHEL FUNCTIONS #########################
 ######################################################################
@@ -886,7 +915,7 @@ DotPlot_timshel <- function(
   data.to.plot$pct.exp[data.to.plot$pct.exp < dot.min] <- NA
 
   if (is.null(group.order)) group.order <- levels(Idents(object))
-    
+
   # reorder for flipped plot
   if (!coord_flip) data.to.plot$id <- factor(data.to.plot$id, levels=rev(group.order)) #reorder(x=data.to.plot$id, X=match(data.to.plot$id, group.order), FU)
 
@@ -956,26 +985,29 @@ DotPlot_timshel <- function(
 
 ######################### FNC_MARKERGENESCORE ##############################
 
+
 fnc_markergeneScore <- function(object,
                                 assay="RNA",
-                                group.by = NULL, 
+                                group.by = NULL,
                                 list_vec_markers_up = NULL,
                                 list_vec_markers_down = NULL,
                                 list_vec_markers_pos = NULL,
                                 list_vec_markers_neg = NULL,
-                                up_min_quant = .6, 
+                                up_min_quant = .6,
                                 down_max_quant =.25,
                                 pos_min_percent = 40,
                                 neg_max_percent = 5) {
   #' @param object
   #' @param assay
   #' @param group.by
-  #' @param list_vec_markers_up a list of vectors. List names for cell type. 
+  #' @param list_vec_markers_up a list of vectors. List names for cell type.
   #' @param up_min_quant the min quantile of a cell cluster in expression of a marker gene for the gene to be considered 'up' in that cluster
   #' @param down_max_quant the max quantile of a cell cluster in expression of a marker gene for the gene to be considered 'down' in that cluster
   #' @param pos_min_percent the minimum percentage of a cell cluster expressing a marker gene for the gene to be considered 'positive' in that cluster
   #' @param neg_max_percent the max percentage of a cell cluster expressing a marker gene for the gene to be considered 'negative' in that cluster
-  
+
+  #' @TODO: replace up/down with hypergeometric test on DE genes
+
   if (sapply(list(list_vec_markers_up,list_vec_markers_down,list_vec_markers_pos,list_vec_markers_neg), is.null) %>% all) {
     stop("at least one list_vec_markers.. must be provided")
   }
@@ -983,37 +1015,37 @@ fnc_markergeneScore <- function(object,
   if (!is.null(group.by)) {
     Idents(object) <- object[[group.by]]
   }
-  
-  c(unlist(list_vec_markers_up), 
-    unlist(list_vec_markers_down), 
-    unlist(list_vec_markers_pos), 
-    unlist(list_vec_markers_neg)) %>% 
-    unique -> vec_markersAll 
-  
+
+  c(unlist(list_vec_markers_up),
+    unlist(list_vec_markers_down),
+    unlist(list_vec_markers_pos),
+    unlist(list_vec_markers_neg)) %>%
+    unique -> vec_markersAll
+
   vec_markersAll <- genes.plot <- filter_genes_in_seurat_data.vector(vec_markersAll, seurat_obj=object, do.print=F)
   # Use the data slot because some cells may have been filtered out which are still present in the counts slot
   DefaultAssay(object) <- assay
-  data.to.plot <- FetchData(object = object, 
-                            slot = "data", 
+  data.to.plot <- FetchData(object = object,
+                            slot = "data",
                             vars=vec_markersAll)
 
   if (! is.null(group.by)) {
     Idents(object) <- object[[group.by]]
   }
-  
+
   # Use the data slot because some cells may have been filtered out which are still present in the counts slot
   DefaultAssay(object) <- assay
   data.to.plot <- FetchData(object = object, slot = "data", vars=vec_markersAll)
   data.to.plot$cell <- rownames(x = data.to.plot)
   data.to.plot$id <- Idents(object)
-  
+
   data.to.plot %>% gather(
     key = vec_markersAll,
     value = expression,
     -c(cell, id) # so 'gather' the genes.plot columns into a single column called expression. Don't touch cell and id columns
   ) -> data.to.plot # tidyr::gather takes multiple columns and collapses into key-value pairs,
   # duplicating all other columns as needed.
-  
+
   data.to.plot %>%
     group_by(id, vec_markersAll) %>%
     #Most data operations are done on groups defined by variables.
@@ -1027,117 +1059,117 @@ fnc_markergeneScore <- function(object,
       pct.exp = sum(expression>0)/length(expression)*100#PercentAbove(x = expression, threshold = 0)
     ) -> data.to.plot
 
-  
+
   data.to.plot$vec_markersAll <- factor(
     x = data.to.plot$vec_markersAll,
     levels = rev(x = sub(pattern = "-", replacement = ".", x = vec_markersAll))
   )
   data.to.plot$pct.exp[data.to.plot$pct.exp < dot.min] <- NA
-  
+
   data.to.plot %>% dplyr::mutate(., avg.exp.rank=percent_rank(avg.exp)) ->
     data.to.plot
-  
+
   #if (is.null(group.order)) group.order <- levels(Idents(object))
-  
+
   # reorder for flipped plot
   #if (!coord_flip) data.to.plot$id <- factor(data.to.plot$id, levels=rev(group.order)) #reorder(x=data.to.plot$id, X=match(data.to.plot$id, group.order), FU)
-  
+
   vec_uniqueLabels <- lapply(list(list_vec_markers_up,
                                   list_vec_markers_down,
                                   list_vec_markers_pos,
                                   list_vec_markers_neg), names) %>%
     unlist %>%
     unique
-  
-  list_list_vec_markers <- list("up" = list_vec_markers_up, 
+
+  list_list_vec_markers <- list("up" = list_vec_markers_up,
                                 "down"=list_vec_markers_down,
                                 "pos"=list_vec_markers_pos,
                                 "neg"=list_vec_markers_neg)
   list_out <- list()
-  
+
   for (markerType in names(list_list_vec_markers)) {
-    
+
     if (is.null(list_list_vec_markers[[markerType]])) next
-    
+
     ### Now, rather than plotting, evaluate how well the celltypes match the expression
     df_out <- matrix(nrow = length(levels(data.to.plot$id)),
                              ncol = length(vec_uniqueLabels)
     ) %>% as.data.frame
-    
+
     rownames(df_out) <- levels(data.to.plot$id)
     colnames(df_out) <- vec_uniqueLabels
-    
+
     for (celltypeLabel in names(list_list_vec_markers[[markerType]])) {
       # which genes?
       vec_genes <- list_list_vec_markers[[markerType]][[celltypeLabel]]
-      
-      df_out[,celltypeLabel] <- 
+
+      df_out[,celltypeLabel] <-
         sapply(rownames(df_out), # loop over cell cluster rows in output table
                function(cellClust) {
-          
+
           # get index for genes in data.to.plot
-          idx_rows <- which(data.to.plot$id == cellClust & 
+          idx_rows <- which(data.to.plot$id == cellClust &
                               data.to.plot$vec_markersAll %in% vec_genes)
-          
+
           if (length(idx_rows))  { # if any of the genes were detected
-            
+
             if (markerType =="up") {
-              
+
               sum(data.to.plot$avg.exp.rank[idx_rows] >= up_min_quant)/
                 length(vec_genes) # if a gene was not detected, it counts against
-            
+
             } else if (markerType=="down") {
-              
+
               sum(data.to.plot$avg.exp.rank[idx_rows] <= down_max_quant)/
                 length(idx_rows) # if a gene was not detected, it doesn't count against
-              
+
             } else if (markerType=="pos") {
-              
+
               sum(data.to.plot$pct.exp[idx_rows] >= pos_min_percent)/
                 length(vec_genes) # if a gene was not detected, it counts against
-                
+
             } else if (markerType=="neg") {
-             
+
               sum(data.to.plot$pct.exp[idx_rows] <= neg_max_percent)/
-                length(idx_rows) # if a gene was not detected, it counts against 
+                length(idx_rows) # if a gene was not detected, it counts against
             }
           } else {
             NA
           }
-            
+
       })
-      
+
     }
-    
+
     list_out[[markerType]] <- df_out
-    
+
   }
 
-  mat_avg <- sapply(levels(data.to.plot$id), 
+  mat_avg <- sapply(levels(data.to.plot$id),
                     function(cellClust){
     sapply(vec_uniqueLabels, function(celltypeLabel) {
-      sapply(list_out, function(df_out) df_out[cellClust, celltypeLabel]) %>% mean(.,na.rm=T) 
+      sapply(list_out, function(df_out) df_out[cellClust, celltypeLabel]) %>% mean(.,na.rm=T)
     })
-    }) 
-    
+    })
+
   df_avg <- as.data.frame(t(mat_avg))
 
   rownames(df_avg) <- levels(data.to.plot$id)
   colnames(df_avg) <- vec_uniqueLabels
-  
-  list_out[["avg_score"]] <- df_avg 
-  
+
+  list_out[["avg_score"]] <- df_avg
+
   vec_labelAssign <- colnames(df_avg)[apply(X=df_avg, MARGIN = 1, FUN=which.max)]
   vec_maxScore <- apply(X=df_avg, MARGIN = 1, FUN=function(x) max(x,na.rm = T))
-  
+
   df_maxScore <- data.frame("label"=vec_labelAssign,
                             "score"=vec_maxScore,
                             row.names = rownames(df_avg))
 
-  
+
   list_out[["df_maxScore"]] <- df_maxScore
-  
-  return(list_out) 
-  
+
+  return(list_out)
+
 }
 
