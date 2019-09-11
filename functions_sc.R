@@ -706,7 +706,7 @@ calcVIF_JT_1 <- function(datExpr, list_genesets) {
     #gs.i = which(vec_logicalgenes)
     if (sum(vec_logicalgenes) < 2) {
       warning("GeneSet '", genesetname, "' contains one or zero overlapping genes. NAs produced.")
-      return(NA)
+      return(c("vif"=NA, "mean.cor"=NA))
     }
     cor.mat <- cor(t(datExpr[vec_logicalgenes, ]), use = "pairwise.complete.obs")
     cor.mat[is.na(cor.mat)] <- 0
