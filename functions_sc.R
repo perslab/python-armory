@@ -243,7 +243,7 @@ gene_map <- function(dataIn,
     if(is.null(colGene) & replace==T) message("Duplicate genes will be averaged and merged to keep row.names unique")
 
     genes_from <- if (is.null(colGene)) rownames(dataIn) else dataIn[[colGene]]
-    idx_match <- match(genes_from, df_mapping[[fromMapCol]])
+    idx_match <- match(toupper(gsub("-|_", ".", genes_from)), toupper(gsub("-|_", ".", df_mapping[[fromMapCol]])))
     genes_to <- df_mapping[[toMapCol]][idx_match]
 
     if (replace) { # remove NAs
@@ -276,7 +276,7 @@ gene_map <- function(dataIn,
       } else if (class(eachVec)=="character") {
           eachVec
         }
-      newNames <- df_mapping[[toMapCol]][match(oldNames, df_mapping[[fromMapCol]])]
+      newNames <- df_mapping[[toMapCol]][match(toupper(gsub("-|_", ".", oldNames)), toupper(gsub("-|_", ".", df_mapping[[fromMapCol]])))]
       if (na.rm) {
         vec_logicalNA <- is.na(newNames)
         eachVec <- eachVec[!vec_logicalNA]
@@ -286,7 +286,7 @@ gene_map <- function(dataIn,
       return(eachVec)
     })
   } else if (class(dataIn)=="numeric") {
-    newNames <- df_mapping[[toMapCol]][match(names(dataIn), df_mapping[[fromMapCol]])]
+    newNames <- df_mapping[[toMapCol]][match(toupper(gsub("-|_", ".", names(dataIn))), toupper(gsub("-|_", ".", df_mapping[[fromMapCol]])))]
     if (na.rm) {
       vec_logicalNA <- is.na(newNames)
       newNames <- newNames[!vec_logicalNA]
@@ -294,7 +294,7 @@ gene_map <- function(dataIn,
       }
     names(dataIn) <- newNames
   } else if (class(dataIn)=="character") {
-    dataIn <- df_mapping[[toMapCol]][match(dataIn, df_mapping[[fromMapCol]])]
+    dataIn <- df_mapping[[toMapCol]][match(toupper(gsub("-|_", ".", dataIn)), toupper(gsub("-|_", ".", df_mapping[[fromMapCol]])))]
     if (na.rm) dataIn <- dataIn[!is.na(dataIn)]
   }
   return(dataIn)
