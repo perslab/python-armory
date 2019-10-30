@@ -206,7 +206,7 @@ gene_map <- function(dataIn,
                      replace = F,
                      na.rm = T) {
   #' @usage map genes in a dataframe column, vector, or list of vectors between naming schemes in df_mapping
-  #' @param dataIn data.frame with a column or rownames containing genes to remap,
+  #' @param dataIn data.frame or data.table with a column or rownames containing genes to remap,
   #' matrix with gene rownames, a list of vectors, or a vector, either named numeric or character
   #' If a list, if the vectors are numeric, the vector names are assumed to be genes, if the vectors are character
   #' the vector values are assumed to be genes
@@ -229,7 +229,7 @@ gene_map <- function(dataIn,
   # ortholog mapping:
   # /projects/timshel/sc-genetics/sc-genetics/data/gene_annotations/gene_annotation.hsapiens_mmusculus_unique_orthologs.GRCh37.ens_v91.txt.gz
 
-  stopifnot(class(df_mapping)=="data.frame")
+  stopifnot(any(class(df_mapping)%in%c("data.frame", "data.table")))
   stopifnot(length(from)>0 & length(to)>0)
 
   fromMapCol <- if (from %in% colnames(df_mapping)) from else grep(pattern=from, x = colnames(df_mapping), ignore.case=T, value = T)
