@@ -229,7 +229,7 @@ gene_map <- function(dataIn,
   # ortholog mapping:
   # /projects/timshel/sc-genetics/sc-genetics/data/gene_annotations/gene_annotation.hsapiens_mmusculus_unique_orthologs.GRCh37.ens_v91.txt.gz
 
-  
+
   stopifnot(any(class(df_mapping)%in%c("data.frame", "data.table")))
   stopifnot(length(from)>0 & length(to)>0)
 
@@ -700,7 +700,7 @@ calcVIF_JT_1 <- function(datExpr, list_genesets) {
   #' @param list_genesets: list of genesets, using same gene names as datExpr
   #' @return list of vectors, one per geneset. First vector element is VIF, second is mean Pearson's rho correlation.
   #' @example list_vec_VIF <- calcVIF_JT_1(datExpr=mat_counts, list_genesets=mylist)
-  
+
   list_vec_vif = lapply(names(list_genesets), function(genesetname) {
     vec_logicalgenes <-rownames(datExpr) %in% list_genesets[[genesetname]]
     #GNames <- rownames(datExpr)[vec_logicalgenes]
@@ -711,8 +711,8 @@ calcVIF_JT_1 <- function(datExpr, list_genesets) {
     }
     cor.mat <- cor(t(datExpr[vec_logicalgenes, ]), use = "pairwise.complete.obs")
     cor.mat[is.na(cor.mat)] <- 0
-    (cor.mat - Diagonal(x = diag(cor.mat))) %>% mean -> mean.cor  
-    
+    (cor.mat - Diagonal(x = diag(cor.mat))) %>% mean -> mean.cor
+
     vif <- 1+(sum(vec_logicalgenes)-1)*mean.cor
     return(c("vif"=vif, "mean.cor"=mean.cor))
   })
@@ -854,6 +854,9 @@ DotPlot_timshel <- function(
 
 ) {
 
+  require(tidyr)
+  require(data.table)
+
 
   # PT added: filter genes, to avoid errors with genes missing
   if (!is.null(df.marker.panel.to.plot)) {
@@ -870,8 +873,11 @@ DotPlot_timshel <- function(
 
   # Use the data slot because some cells may have been filtered out which are still present in the counts slot
   DefaultAssay(object) <- assay
-  data.to.plot <- FetchData(object = object, slot = slot, vars=genes.plot)
-  data.to.plot$cell <- rownames(x = data.to.plot)
+  dgCMatrix_data.to.plot <- GetAssayData(object = object, slot = slot) %>% t
+  dgCMatrix_data.to.plot <- dgCMatrix_data.to.plot[,genes.plot]
+  data.to.plot <- as.data.table(dgCMatrix_data.to.plot)
+  data.to.plot$cell <- rownames(x = dgCMatrix_data.to.plot)
+  rm(dgCMatrix_data.to.plot)
   data.to.plot$id <- Idents(object)
 
   data.to.plot %>% gather(
