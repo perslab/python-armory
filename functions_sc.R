@@ -229,6 +229,7 @@ gene_map <- function(dataIn,
   # ortholog mapping:
   # /projects/timshel/sc-genetics/sc-genetics/data/gene_annotations/gene_annotation.hsapiens_mmusculus_unique_orthologs.GRCh37.ens_v91.txt.gz
 
+  
   stopifnot(any(class(df_mapping)%in%c("data.frame", "data.table")))
   stopifnot(length(from)>0 & length(to)>0)
 
@@ -803,6 +804,7 @@ PercentAbove <- Seurat:::PercentAbove
 #'
 #' @param object Seurat object
 #' @param assay Seurat object assay
+#' @param slot Seurat object slot
 #' @param do.scale display mean expression scaled around mean by sd? If F (default), plot log1p(mean.expr)
 #' @param genes.plot Input vector of genes
 #' @param cols.use colors to plot
@@ -834,6 +836,7 @@ PercentAbove <- Seurat:::PercentAbove
 DotPlot_timshel <- function(
   object,
   assay="RNA",
+  slot="data",
   do.scale=F,
   genes.plot,
   cols.use = c("lightgrey", "blue"),
@@ -867,7 +870,7 @@ DotPlot_timshel <- function(
 
   # Use the data slot because some cells may have been filtered out which are still present in the counts slot
   DefaultAssay(object) <- assay
-  data.to.plot <- FetchData(object = object, slot = "data", vars=genes.plot)
+  data.to.plot <- FetchData(object = object, slot = slot, vars=genes.plot)
   data.to.plot$cell <- rownames(x = data.to.plot)
   data.to.plot$id <- Idents(object)
 
