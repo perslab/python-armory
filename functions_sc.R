@@ -880,7 +880,7 @@ DotPlot_timshel <- function(
   rm(dgCMatrix_data.to.plot)
   data.to.plot$id <- Idents(object)
 
-  data.to.plot %>% gather(
+  data.to.plot %>% tidyr::gather(
     key = genes.plot,
     value = expression,
     -c(cell, id) # so 'gather' the genes.plot columns into a single column called expression. Don't touch cell and id columns
