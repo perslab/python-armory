@@ -1182,3 +1182,36 @@ fnc_markergeneScore <- function(object,
 
 }
 
+
+fnc_merge_htseq_count <- function(dir_htseq_count_outs,
+                                  file_regex=".*") {
+  #' @usage convert individual htseq-count outfiles into a counts matrix and a stats data.table
+  #' genes must be ordered identically
+  #' @param dir_htseq_count_outs character, directory containing htseq-count out files
+  #' @param file_regex character, regex to select files, defaults to *
+  #' @return list containing
+  #'           "mat_counts": gene * sample matrix
+  #'           "dt_stats": sample rows x 5 stats columns data.table with htseq-count stats
+
+  vec_filePaths  = dir(path = dir_htseq_count_outs, pattern = file_regex, full.names = T)
+  vec_fileNames = dir(path = dir_htseq_count_outs, pattern = file_regex, full.names = F)
+
+  list_dt <- lapply(vec_filePaths, data.table::fread)
+
+  # get counts
+  sapply(list_dt, function(x) head(x, nrow(x)-5)[[2]]) ->
+    mat_counts
+
+  rownames(mat_counts) <- head(list_dt[[1]]$V1,length(list_dt[[1]]$V1)-5)
+  colnames(mat_counts) <- vec_fileNames
+
+  # get stats
+  sapply(list_dt, function(x) tail(x, 5)[[2]]) %>% t ->
+    mat_stats
+
+  colnames(mat_stats) <- list_dt[[1]] %>% tail(.,5) %>% '[['(1)
+
+  dt_stats = data.table("sample"=vec_fileNames, mat_stats)
+
+  return(list("mat_counts"=mat_counts, "dt_stats"=dt_stats))
+}
