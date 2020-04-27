@@ -1260,7 +1260,7 @@ compute_annot_stat = function(dt_data,
     stop("can only compute percentiles for now, sorry!")
     return("NA")
   }
-  feature_subset = feature_subset[,feature_subset %in% rownames(mat_out)]
+  feature_subset = feature_subset[feature_subset %in% rownames(mat_out)]
   mat_out = mat_out[feature_subset,]
   
   return(mat_out)
