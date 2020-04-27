@@ -1182,7 +1182,7 @@ fnc_markergeneScore <- function(object,
 
 }
 
-
+#
 fnc_merge_htseq_count <- function(dir_htseq_count_outs,
                                   file_regex=".*") {
   #' @usage convert individual htseq-count outfiles into a counts matrix and a stats data.table
@@ -1215,3 +1215,61 @@ fnc_merge_htseq_count <- function(dir_htseq_count_outs,
 
   return(list("mat_counts"=mat_counts, "dt_stats"=dt_stats))
 }
+
+
+
+compute_annot_stat = function(dt_data,
+                              vec_annot,
+                              stat,
+                              feature_subset) {
+  #' @usage given an expression matrix, compute some statistic at the annotation level
+  #' @param dt_data feature * sample data.table, first column contains genes
+  #' @param vec_annot vector of sample annotations
+  #' @param stat statistic to compute at annotation level: one of "percentile" ..  
+  #' @param feature_subset only return results for the following features (statistics are computed over all original features)
+  #' @return feature * annotation matrix of statistics
+  
+  
+  if (is.null(feature_subset)) feature_subset = dt_data[[1]]
+  
+  cell_ids = colnames(dt_data)[-1]
+  
+  mat_data_t = as.matrix(dt_data[,-1]) %>% t
+  
+  colnames(mat_data_t)=dt_data[[1]]
+  
+  dt_data_t = data.table("cell_id"=cell_ids,"annotation"= vec_annot, mat_data_t)
+  
+  if (stat %in% c("scaled","percentile") | is.null(feature_subset)){
+    dt_data_mean = dt_data_t[,lapply(.SD,mean),by=annotation,.SDcols=colnames(mat_data_t), ]
+  } else {
+    #TODO: check whether by=annotation works here
+    dt_data_mean = dt_data[feature_subset,lapply(.SD,mean),by="annotation",.SDcols=colnames(mat_data),with=F]
+  }
+  annot_lvls = names(table(vec_annot))
+  
+  if (stat =="percentile") {
+    mat_out = sapply(annot_lvls, function(annot){
+      condition = quote(dt_data_mean[["annotation"]]==annot)
+      feat_order = order(as.numeric(dt_data_mean[eval(condition),2:ncol(dt_data_mean)]))
+      feat_percentiles = feat_order/(ncol(dt_data_mean)-1)
+      names(feat_percentiles) = colnames(dt_data_mean)[-1]
+      return(feat_percentiles)
+    })
+  } else {
+    stop("can only compute percentiles for now, sorry!")
+    return("NA")
+  }
+  feature_subset = feature_subset[,feature_subset %in% rownames(mat_out)]
+  mat_out = mat_out[feature_subset,]
+  
+  return(mat_out)
+  
+}
+
+
+
+
+
+
+
